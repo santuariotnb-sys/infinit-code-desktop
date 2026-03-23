@@ -127,5 +127,12 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  auth: {
+    loginGithub: () => ipcRenderer.invoke('auth:github'),
+    loginGoogle: () => ipcRenderer.invoke('auth:google'),
+    getSession: () => ipcRenderer.invoke('auth:session'),
+    logout: () => ipcRenderer.invoke('auth:logout'),
+  },
+
   screenshot: () => ipcRenderer.invoke('window:screenshot'),
 });

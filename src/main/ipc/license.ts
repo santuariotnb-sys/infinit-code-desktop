@@ -70,7 +70,7 @@ async function validateOnline(key: string, email: string): Promise<{
 export function registerLicenseHandlers(_mainWindow: BrowserWindow): void {
   ipcMain.handle('license:validate', async (_event, key: string, email: string) => {
     if (process.env.NODE_ENV === 'development' && process.env.DEV_LICENSE_BYPASS === '1') {
-      const bypass = { valid: true, plan: 'pro', expiresAt: null };
+      const bypass: { valid: boolean; plan: string; expiresAt: string | null } = { valid: true, plan: 'pro', expiresAt: null };
       store.set('license', {
         key,
         email,

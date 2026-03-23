@@ -6,6 +6,7 @@ import { registerFileHandlers } from './ipc/files';
 import { registerClaudeHandlers } from './ipc/claude';
 import { registerGithubHandlers } from './ipc/github';
 import { registerLicenseHandlers } from './ipc/license';
+import { registerAuthHandlers } from './ipc/auth';
 import { runAutoSetup } from './services/auto-setup';
 import { initUpdater } from './services/updater';
 
@@ -88,6 +89,7 @@ function createWindow(): void {
     registerClaudeHandlers(mainWindow);
     registerGithubHandlers(mainWindow);
     registerLicenseHandlers(mainWindow);
+    registerAuthHandlers(mainWindow);
 
     ipcMain.handle('window:screenshot', async () => {
       try {

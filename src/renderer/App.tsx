@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import Splash from './screens/Splash';
-import Setup from './screens/Setup';
-import License from './screens/License';
+import Login from './screens/Login';
 import IDE from './screens/IDE';
 
-type Screen = 'splash' | 'setup' | 'license' | 'ide';
+type Screen = 'splash' | 'login' | 'ide';
 
-const SPLASH_MIN_MS = 2500;
+const SPLASH_MIN_MS = 2300;
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('splash');
@@ -14,28 +13,28 @@ export default function App() {
   useEffect(() => {
     const splashStart = Date.now();
 
-    // Verifica licença no boot — roda em paralelo com o splash mínimo
     async function bootCheck() {
-      let stored: { valid: boolean } | null = null;
+      let session = null;
       try {
-        stored = await window.api.license.getStored();
-      } catch {
-        stored = null;
-      }
+        session = await window.api.auth.getSession();
+      } catch { /* sem sessão */ }
 
-      // Garante tempo mínimo do splash
+      // Garante tempo mínimo do splash para os 5 ícones animarem
       const elapsed = Date.now() - splashStart;
       const remaining = Math.max(0, SPLASH_MIN_MS - elapsed);
       await new Promise((r) => setTimeout(r, remaining));
 
-      if (stored?.valid) {
-        setScreen('ide');
-      } else {
-        setScreen('setup');
-      }
+      setScreen(session ? 'ide' : 'login');
     }
 
     bootCheck();
+
+    // Setup roda silenciosamente em background — não bloqueia o fluxo
+    const cleanupSetup = window.api.setup.onComplete(() => {
+      // setup concluído silenciosamente, sem navegar
+    });
+
+    return cleanupSetup;
   }, []);
 
   const isMac = navigator.userAgent.includes('Mac');
@@ -44,9 +43,8 @@ export default function App() {
     <>
       {isMac && screen !== 'splash' && <div className="titlebar-drag" />}
       {screen === 'splash' && <Splash />}
-      {screen === 'setup' && <Setup onComplete={() => setScreen('license')} />}
-      {screen === 'license' && <License onActivated={() => setScreen('ide')} />}
-      {screen === 'ide' && <IDE />}
+      {screen === 'login'  && <Login onLogin={() => setScreen('ide')} />}
+      {screen === 'ide'    && <IDE />}
     </>
   );
 }

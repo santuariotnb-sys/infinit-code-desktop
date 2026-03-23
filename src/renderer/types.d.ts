@@ -72,6 +72,12 @@ interface ElectronAPI {
     onNeedGit?: (cb: () => void) => () => void;
     onNeedClaude?: (cb: () => void) => () => void;
   };
+  auth: {
+    loginGithub: () => Promise<{ ok: boolean; email?: string; name?: string; avatar?: string; provider?: string; error?: string }>;
+    loginGoogle: () => Promise<{ ok: boolean; email?: string; name?: string; avatar?: string; provider?: string; error?: string }>;
+    getSession: () => Promise<{ email: string; name: string; avatar: string; provider: 'google' | 'github' } | null>;
+    logout: () => Promise<boolean>;
+  };
   screenshot: () => Promise<string>;
 }
 

@@ -78,6 +78,9 @@ const QUICK_ACTIONS = [
   { label: 'Deploy', icon: '🚀', inject: 'claude --dangerously-skip-permissions\r', delay: 'Prepare este projeto para deploy na Vercel. Configure variáveis de ambiente, otimize o build, e faça o deploy.\r' },
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const SpeechRecognition = (typeof window !== 'undefined') && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
 export default function IntelliChat({ projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile }: IntelliChatProps) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -88,10 +91,14 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
   const [mentionFiles, setMentionFiles] = useState<string[]>([]);
   const [showMentionList, setShowMentionList] = useState(false);
   const [mentionCursor, setMentionCursor] = useState(0);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
 
   // Auto-scroll
   useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -130,6 +137,63 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
     if (['ts', 'js'].includes(ext)) return ['Adicione tratamento de erro', 'Melhore a performance', 'Adicione validação Zod'];
     if (/error:/i.test(terminalOutput)) return ['Corrija esse erro', 'Explique o erro', 'Mostre o stack trace'];
     return [];
+  }
+
+  // ── Drag & drop ─────────────────────────────────────────────
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    const TEXT_EXTS = /\.(ts|tsx|js|jsx|json|md|txt|sql|css|py|go|rs|env|yaml|yml|toml|sh|html|xml|csv)$/i;
+    for (const file of files) {
+      if (!TEXT_EXTS.test(file.name)) continue;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const content = ev.target?.result as string;
+        setAttached((prev) => [...prev, { name: file.name, content, type: 'file' }]);
+      };
+      reader.readAsText(file);
+    }
+  }
+
+  // ── Web Speech API ───────────────────────────────────────────
+  function handleVoiceToggle() {
+    if (!SpeechRecognition) return;
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const rec = new SpeechRecognition();
+    rec.lang = 'pt-BR';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+
+    rec.onstart = () => setIsListening(true);
+    rec.onend = () => setIsListening(false);
+    rec.onerror = () => setIsListening(false);
+
+    rec.onresult = (event: { results: { [x: number]: { [x: number]: { transcript: string } } } }) => {
+      const transcript = event.results[0][0].transcript;
+      setInput((prev) => prev ? `${prev} ${transcript}` : transcript);
+      textareaRef.current?.focus();
+    };
+
+    recognitionRef.current = rec;
+    rec.start();
   }
 
   function send(text?: string) {
@@ -250,7 +314,12 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
   const isEmpty = messages.length === 0;
 
   return (
-    <div style={styles.container}>
+    <div
+      style={{ ...styles.container, ...(isDragOver ? styles.dragOver : {}) }}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {/* Header */}
       <div style={styles.header}>
         <span style={styles.headerIcon}>∞</span>
@@ -352,6 +421,15 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
           <button style={styles.toolBtn} onClick={() => fileInputRef.current?.click()} title="Anexar arquivo">📎</button>
           <button style={styles.toolBtn} onClick={attachActiveFile} title="Arquivo ativo" disabled={!activeFile}>📁</button>
           <button style={styles.toolBtn} onClick={captureScreenshot} title="Screenshot">🖼</button>
+          {SpeechRecognition && (
+            <button
+              style={{ ...styles.toolBtn, ...(isListening ? styles.toolBtnActive : {}) }}
+              onClick={handleVoiceToggle}
+              title={isListening ? 'Parar gravação' : 'Gravar voz (pt-BR)'}
+            >
+              🎤
+            </button>
+          )}
           <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileAttach}
             accept=".ts,.tsx,.js,.jsx,.json,.md,.txt,.sql,.css,.env.example,.py,.go,.rs" />
         </div>
@@ -380,6 +458,7 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
 
 const styles: Record<string, React.CSSProperties> = {
   container: { height: '100%', display: 'flex', flexDirection: 'column', background: '#111', fontSize: '12px', position: 'relative' },
+  dragOver: { outline: '2px dashed rgba(0,255,136,0.4)', outlineOffset: '-2px', background: 'rgba(0,255,136,0.03)' },
   header: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid #2a2a2a', flexShrink: 0 },
   headerIcon: { color: '#00ff88', fontSize: 16 },
   headerTitle: { color: '#fff', fontWeight: 600, fontSize: 13, flex: 1 },
@@ -412,6 +491,7 @@ const styles: Record<string, React.CSSProperties> = {
   inputArea: { borderTop: '1px solid #2a2a2a', flexShrink: 0 },
   inputToolbar: { display: 'flex', gap: 2, padding: '4px 10px', borderBottom: '1px solid #1a1a1a' },
   toolBtn: { background: 'none', border: 'none', fontSize: 13, cursor: 'pointer', padding: '3px 5px', borderRadius: 4, opacity: 0.6 },
+  toolBtnActive: { opacity: 1, background: 'rgba(0,255,136,0.15)', color: '#00ff88' },
   inputRow: { display: 'flex', gap: 6, padding: '8px 10px', alignItems: 'flex-end' },
   textarea: { flex: 1, background: '#0d0d0d', border: '1px solid #2a2a2a', borderRadius: 6, padding: '8px 10px', color: '#fff', fontSize: 12, resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.4 },
   sendBtn: { width: 34, height: 34, borderRadius: 6, background: '#00ff88', color: '#0a0a0a', border: 'none', fontSize: 18, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
