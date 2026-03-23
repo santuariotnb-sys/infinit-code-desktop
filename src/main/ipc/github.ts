@@ -15,7 +15,7 @@ try {
 
 const SERVICE = 'infinit-code-github';
 const ACCOUNT = 'oauth-token';
-const CLIENT_ID = process.env.GITHUB_CLIENT_ID || 'Ov23liTzXXXXXXXXXXXX';
+const CLIENT_ID = 'Ov23liFYvVqtk4wX3qrE';
 
 function httpsGet(url: string, token?: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -57,6 +57,10 @@ async function getToken(): Promise<string | null> {
 
 const fsWatchers = new Map<string, fs.FSWatcher>();
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function safeSend(win: BrowserWindow, channel: string, payload: unknown) {
+  if (!win.isDestroyed()) win.webContents.send(channel, payload);
+}
 
 export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
@@ -168,8 +172,8 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
       const cloneUrl = repo.startsWith('http') ? repo : `https://github.com/${repo}.git`;
       return new Promise<{ ok: boolean; path?: string; error?: string }>((resolve) => {
         const proc = spawn('git', ['clone', cloneUrl, resolvedDest]);
-        proc.stdout?.on('data', (d: Buffer) => mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() }));
-        proc.stderr?.on('data', (d: Buffer) => mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() }));
+        proc.stdout?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
+        proc.stderr?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
         proc.on('close', (code) => code === 0 ? resolve({ ok: true, path: resolvedDest }) : resolve({ ok: false, error: `Exit ${code}` }));
       });
     } catch (e) {
@@ -238,17 +242,17 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
           return;
         }
         const [cmd, args] = steps[idx++];
-        mainWindow.webContents.send('github:sync-progress', { step: `${cmd} ${args.join(' ')}` });
+        safeSend(mainWindow, 'github:sync-progress', { step: `${cmd} ${args.join(' ')}` });
         const proc = spawn(cmd, args, { cwd });
         proc.stdout?.on('data', (d: Buffer) => {
           log += d.toString();
-          mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() });
+          safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() });
         });
         proc.stderr?.on('data', (d: Buffer) => {
           const t = d.toString();
           log += t;
           if (t.includes('CONFLICT')) conflicts = true;
-          mainWindow.webContents.send('github:sync-progress', { msg: t.trim() });
+          safeSend(mainWindow, 'github:sync-progress', { msg: t.trim() });
         });
         proc.on('close', next);
       }
@@ -260,8 +264,8 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('github:pull', (_evt, cwd: string, branch: string) => {
     return new Promise<{ ok: boolean }>((resolve) => {
       const proc = spawn('git', ['pull', 'origin', branch], { cwd });
-      proc.stdout?.on('data', (d: Buffer) => mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() }));
-      proc.stderr?.on('data', (d: Buffer) => mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() }));
+      proc.stdout?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
+      proc.stderr?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
       proc.on('close', (code) => resolve({ ok: code === 0 }));
     });
   });
@@ -270,8 +274,8 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('github:push', (_evt, cwd: string, branch: string) => {
     return new Promise<{ ok: boolean }>((resolve) => {
       const proc = spawn('git', ['push', 'origin', branch], { cwd });
-      proc.stdout?.on('data', (d: Buffer) => mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() }));
-      proc.stderr?.on('data', (d: Buffer) => mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() }));
+      proc.stdout?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
+      proc.stderr?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
       proc.on('close', (code) => resolve({ ok: code === 0 }));
     });
   });
@@ -319,7 +323,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
         if (debounceTimers.has(projectPath)) clearTimeout(debounceTimers.get(projectPath)!);
         debounceTimers.set(projectPath, setTimeout(() => {
           if (!mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('github:local-changes', { files: [...changed] });
+            safeSend(mainWindow, 'github:local-changes', { files: [...changed] });
           }
           changed.clear();
           debounceTimers.delete(projectPath);
