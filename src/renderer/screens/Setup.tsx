@@ -9,14 +9,15 @@ interface Step {
   label: string;
   detail: string;
   status: 'pending' | 'active' | 'done' | 'error';
+  errorMsg?: string;
 }
 
 const STEPS_INIT: Step[] = [
-  { id: 'node',   label: 'Node.js',          detail: 'Verificando v18+',          status: 'pending' },
-  { id: 'git',    label: 'Git',               detail: 'Verificando instalação',    status: 'pending' },
-  { id: 'claude', label: 'Claude Code',       detail: 'npm install -g @anthropic', status: 'pending' },
-  { id: 'skills', label: 'Skills Infinit',    detail: '6 skills pré-configuradas', status: 'pending' },
-  { id: 'config', label: 'Configurações',     detail: 'Ajustes finais',            status: 'pending' },
+  { id: 'node',   label: 'Node.js',       detail: 'Verificando v18+',           status: 'pending' },
+  { id: 'git',    label: 'Git',           detail: 'Verificando instalação',     status: 'pending' },
+  { id: 'claude', label: 'Claude Code',   detail: 'npm install -g @anthropic',  status: 'pending' },
+  { id: 'skills', label: 'Skills Infinit', detail: '5 skills pré-configuradas', status: 'pending' },
+  { id: 'config', label: 'Configurações', detail: 'Ajustes finais',             status: 'pending' },
 ];
 
 const LOGO_SVG = (
@@ -31,7 +32,9 @@ const LOGO_SVG = (
 function StepIcon({ status }: { status: Step['status'] }) {
   if (status === 'done') return (
     <div className="ob-step-icon ok">
-      <svg width="13" height="10" viewBox="0 0 13 10" fill="none"><path d="M1 5L4.5 8.5L12 1" stroke="#3CB043" strokeWidth="1.6" strokeLinecap="round"/></svg>
+      <svg width="13" height="10" viewBox="0 0 13 10" fill="none">
+        <path d="M1 5L4.5 8.5L12 1" stroke="#3CB043" strokeWidth="1.6" strokeLinecap="round"/>
+      </svg>
     </div>
   );
   if (status === 'active') return (
@@ -44,12 +47,16 @@ function StepIcon({ status }: { status: Step['status'] }) {
   );
   if (status === 'error') return (
     <div className="ob-step-icon err">
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 2l8 8M10 2l-8 8" stroke="#d93030" strokeWidth="1.4" strokeLinecap="round"/></svg>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M2 2l8 8M10 2l-8 8" stroke="#d93030" strokeWidth="1.4" strokeLinecap="round"/>
+      </svg>
     </div>
   );
   return (
     <div className="ob-step-icon idle">
-      <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><circle cx="4" cy="4" r="3" stroke="#a8aab4" strokeWidth="1.2"/></svg>
+      <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+        <circle cx="4" cy="4" r="3" stroke="#a8aab4" strokeWidth="1.2"/>
+      </svg>
     </div>
   );
 }
@@ -59,45 +66,101 @@ export default function Setup({ onComplete }: SetupProps) {
   const [message, setMessage] = useState('Verificando seu ambiente...');
   const [progress, setProgress] = useState(0);
   const [needNode, setNeedNode] = useState(false);
+  const [needGit, setNeedGit] = useState(false);
+  const [needClaude, setNeedClaude] = useState(false);
   const [needAuth, setNeedAuth] = useState(false);
   const [waitingAuth, setWaitingAuth] = useState(false);
-  const [done, setDone] = useState(false);
+  const [isDone, setIsDone] = useState(false);
+  const [checkAuthFailed, setCheckAuthFailed] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(false);
+
+  function markStep(id: string, status: Step['status'], detail?: string, errorMsg?: string) {
+    setSteps((prev) => prev.map((s) =>
+      s.id === id
+        ? { ...s, status, ...(detail ? { detail } : {}), ...(errorMsg ? { errorMsg } : {}) }
+        : s
+    ));
+  }
+
+  function markAllDone() {
+    setSteps((prev) => prev.map((s) => ({ ...s, status: 'done' as const })));
+  }
 
   useEffect(() => {
+    // Se setup já foi concluído em sessão anterior, detecta imediatamente
+    checkAuth();
+
     const cleanupProgress = window.api.setup.onProgress((data) => {
       setProgress(data.pct);
       setMessage(data.msg);
-      setSteps((prev) =>
-        prev.map((step) => {
-          if (step.id === data.step) return { ...step, status: data.msg.includes('✓') ? 'done' : 'active' };
-          if (data.step === 'done') return { ...step, status: 'done' };
-          return step;
-        })
-      );
-      if (data.step === 'done') checkAuth();
+
+      if (data.step === 'done') {
+        markAllDone();
+        checkAuth();
+        return;
+      }
+
+      if (data.status === 'error') {
+        markStep(data.step, 'error', data.msg, data.msg);
+      } else if (data.status === 'done') {
+        markStep(data.step, 'done');
+      } else {
+        markStep(data.step, 'active', data.msg);
+      }
     });
 
     const cleanupNeedNode = window.api.setup.onNeedNode(() => {
       setNeedNode(true);
       setMessage('Node.js precisa ser instalado');
-      setSteps((prev) => prev.map((s) => s.id === 'node' ? { ...s, status: 'error' } : s));
+      markStep('node', 'error', 'Não encontrado', 'Node.js 18+ não encontrado no sistema');
+    });
+
+    const cleanupNeedGit = window.api.setup.onNeedGit?.(() => {
+      setNeedGit(true);
+      setMessage('Git não instalado');
+      markStep('git', 'error', 'Não encontrado', 'Git não encontrado após tentativa de instalação');
+    });
+
+    const cleanupNeedClaude = window.api.setup.onNeedClaude?.(() => {
+      setNeedClaude(true);
+      setMessage('Falha ao instalar Claude Code');
+      markStep('claude', 'error', 'Falha na instalação', 'Execute: npm install -g @anthropic-ai/claude-code');
     });
 
     const cleanupComplete = window.api.setup.onComplete(() => checkAuth());
 
-    return () => { cleanupProgress(); cleanupNeedNode(); cleanupComplete(); };
+    return () => {
+      cleanupProgress();
+      cleanupNeedNode();
+      cleanupNeedGit?.();
+      cleanupNeedClaude?.();
+      cleanupComplete();
+    };
   }, []);
 
   async function checkAuth() {
-    const auth = await window.api.claude.checkAuth();
-    if (auth.authenticated) {
-      setDone(true);
-      setProgress(100);
-      setMessage('Tudo pronto! Vamos codar.');
-      setSteps((prev) => prev.map((s) => ({ ...s, status: 'done' })));
-    } else {
-      setNeedAuth(true);
-      setMessage('Conecte sua conta Claude para continuar');
+    setCheckAuthFailed(false);
+    setCheckingAuth(true);
+    setMessage('Verificando autenticação...');
+    try {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 8000)
+      );
+      const auth = await Promise.race([window.api.claude.checkAuth(), timeout]);
+      if (auth.authenticated) {
+        setIsDone(true);
+        setProgress(100);
+        setMessage('Tudo pronto! Vamos codar.');
+        markAllDone();
+      } else {
+        setNeedAuth(true);
+        setMessage('Conecte sua conta Claude para continuar');
+      }
+    } catch {
+      setCheckAuthFailed(true);
+      setMessage('Falha ao verificar autenticação');
+    } finally {
+      setCheckingAuth(false);
     }
   }
 
@@ -107,13 +170,31 @@ export default function Setup({ onComplete }: SetupProps) {
     const cleanup = window.api.claude.onAuthenticated(() => {
       setWaitingAuth(false);
       setNeedAuth(false);
-      setDone(true);
+      setIsDone(true);
       setProgress(100);
       setMessage('Tudo pronto! Vamos codar.');
-      setSteps((prev) => prev.map((s) => ({ ...s, status: 'done' })));
+      markAllDone();
       cleanup();
     });
   }
+
+  async function handleRetryClaude() {
+    setNeedClaude(false);
+    markStep('claude', 'active', 'Tentando novamente...');
+    setMessage('Reinstalando Claude Code...');
+    const result = await window.api.claude.install();
+    if (result.success) {
+      markStep('claude', 'done');
+      setMessage('Claude Code instalado! Verificando auth...');
+      await checkAuth();
+    } else {
+      markStep('claude', 'error', 'Falha na instalação', result.error || 'Erro desconhecido');
+      setNeedClaude(true);
+      setMessage('Falha ao instalar Claude Code');
+    }
+  }
+
+  const hasBlocker = needNode || needGit || needClaude;
 
   return (
     <div className="ob-bg">
@@ -133,14 +214,42 @@ export default function Setup({ onComplete }: SetupProps) {
         {/* Steps */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 32, position: 'relative', zIndex: 1 }}>
           {steps.map((step) => (
-            <div key={step.id} className={`ob-step ${step.status}`}>
-              <StepIcon status={step.status} />
-              <div className="ob-step-text" style={{ flex: 1, position: 'relative', zIndex: 1 }}>
-                <div style={{ fontSize: 13, color: step.status === 'pending' ? '#a8aab4' : '#3a3d45', fontWeight: step.status === 'active' ? 500 : 300, lineHeight: 1 }}>{step.label}</div>
-                <div style={{ fontSize: 11, color: step.status === 'active' ? '#72757f' : '#c8cad4', fontFamily: 'monospace', marginTop: 2, lineHeight: 1 }}>{step.detail}</div>
+            <div key={step.id}>
+              <div className={`ob-step ${step.status}`}>
+                <StepIcon status={step.status} />
+                <div className="ob-step-text" style={{ flex: 1, position: 'relative', zIndex: 1 }}>
+                  <div style={{
+                    fontSize: 13,
+                    color: step.status === 'pending' ? '#a8aab4' : step.status === 'error' ? '#d93030' : '#3a3d45',
+                    fontWeight: step.status === 'active' ? 500 : 300,
+                    lineHeight: 1,
+                  }}>
+                    {step.label}
+                  </div>
+                  <div style={{
+                    fontSize: 11,
+                    color: step.status === 'error' ? '#d9303099' : step.status === 'active' ? '#72757f' : '#c8cad4',
+                    fontFamily: 'monospace', marginTop: 2, lineHeight: 1,
+                  }}>
+                    {step.detail}
+                  </div>
+                </div>
+                {step.status === 'done' && (
+                  <div style={{ fontSize: 10, color: '#3CB043', fontFamily: 'monospace', position: 'relative', zIndex: 1 }}>ok</div>
+                )}
               </div>
-              {step.status === 'done' && (
-                <div style={{ fontSize: 10, color: '#3CB043', fontFamily: 'monospace', position: 'relative', zIndex: 1 }}>ok</div>
+
+              {/* Mensagem de erro inline por step */}
+              {step.status === 'error' && step.errorMsg && (
+                <div style={{
+                  marginTop: 4, marginLeft: 32, padding: '8px 12px',
+                  background: 'rgba(217,48,48,0.06)', borderRadius: 8,
+                  border: '1px solid rgba(217,48,48,0.15)',
+                }}>
+                  <p style={{ fontSize: 11, color: '#d93030', fontFamily: 'monospace', margin: 0, lineHeight: 1.5 }}>
+                    {step.errorMsg}
+                  </p>
+                </div>
               )}
             </div>
           ))}
@@ -152,32 +261,93 @@ export default function Setup({ onComplete }: SetupProps) {
         </div>
 
         {/* Message */}
-        <p style={{ fontSize: 13, color: '#72757f', textAlign: 'center', fontFamily: 'monospace', marginBottom: 28, position: 'relative', zIndex: 1 }}>{message}</p>
+        <p style={{ fontSize: 13, color: '#72757f', textAlign: 'center', fontFamily: 'monospace', marginBottom: 28, position: 'relative', zIndex: 1 }}>
+          {message}
+        </p>
 
-        {/* Need Node */}
+        {/* Blocker: Node.js não encontrado */}
         {needNode && (
-          <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: 16, padding: '20px 22px', marginBottom: 16, border: '1px solid rgba(217,48,48,0.12)', position: 'relative', zIndex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#d93030', marginBottom: 6 }}>Node.js não encontrado</div>
-            <p style={{ fontSize: 13, color: '#72757f', lineHeight: 1.6, marginBottom: 14, fontWeight: 300 }}>O Node.js 18+ é necessário para rodar o Infinit Code.</p>
+          <div style={styles.blocker}>
+            <div style={styles.blockerTitle}>Node.js não encontrado</div>
+            <p style={styles.blockerText}>
+              O Node.js 18+ é necessário para rodar o Claude Code. Instale e reinicie o app.
+            </p>
             <button className="ob-btn-primary" onClick={() => window.api.shell.openExternal('https://nodejs.org/en/download')}>
               <span style={{ position: 'relative', zIndex: 1 }}>Baixar Node.js →</span>
             </button>
-            <p style={{ fontSize: 11, color: '#a8aab4', textAlign: 'center', marginTop: 10, fontFamily: 'monospace' }}>Após instalar, reinicie o Infinit Code.</p>
+            <p style={styles.blockerHint}>Após instalar, reinicie o Infinit Code.</p>
           </div>
         )}
 
-        {/* Need Auth */}
-        {needAuth && !waitingAuth && (
-          <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: 16, padding: '20px 22px', position: 'relative', zIndex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1c20', marginBottom: 6 }}>Conectar conta Claude</div>
-            <p style={{ fontSize: 13, color: '#72757f', lineHeight: 1.6, marginBottom: 14, fontWeight: 300 }}>Faça login com Google ou email para ativar o Claude Code.</p>
+        {/* Blocker: Git não instalado */}
+        {needGit && (
+          <div style={styles.blocker}>
+            <div style={styles.blockerTitle}>Git não encontrado</div>
+            <p style={styles.blockerText}>
+              O Git é necessário para controle de versão. Instale e reinicie o app.
+            </p>
+            <button className="ob-btn-primary" onClick={() => window.api.shell.openExternal('https://git-scm.com/downloads')}>
+              <span style={{ position: 'relative', zIndex: 1 }}>Baixar Git →</span>
+            </button>
+            <p style={styles.blockerHint}>Após instalar, reinicie o Infinit Code.</p>
+          </div>
+        )}
+
+        {/* Blocker: Claude Code falhou — com retry */}
+        {needClaude && (
+          <div style={styles.blocker}>
+            <div style={styles.blockerTitle}>Falha ao instalar Claude Code</div>
+            <p style={styles.blockerText}>
+              A instalação automática falhou. Tente novamente ou instale manualmente.
+            </p>
+            <div style={{ display: 'flex', gap: 10, flexDirection: 'column' }}>
+              <button className="ob-btn-primary" onClick={handleRetryClaude}>
+                <span style={{ position: 'relative', zIndex: 1 }}>Tentar novamente</span>
+              </button>
+              <button
+                style={{ ...styles.btnSecondary }}
+                onClick={() => window.api.shell.openExternal('https://docs.anthropic.com/claude-code')}
+              >
+                Instalar manualmente
+              </button>
+            </div>
+            <p style={styles.blockerHint}>npm install -g @anthropic-ai/claude-code</p>
+          </div>
+        )}
+
+        {/* Fallback: checkAuth falhou ou timeout */}
+        {(checkAuthFailed || checkingAuth) && !hasBlocker && (
+          <div style={styles.blocker}>
+            <div style={styles.blockerTitle}>
+              {checkingAuth ? 'Verificando...' : 'Erro ao verificar autenticação'}
+            </div>
+            <p style={styles.blockerText}>
+              {checkingAuth
+                ? 'Aguarde enquanto verificamos sua conta Claude.'
+                : 'Não foi possível verificar sua conta Claude. Verifique sua conexão e tente novamente.'}
+            </p>
+            <button className="ob-btn-primary" onClick={checkAuth} disabled={checkingAuth}>
+              <span style={{ position: 'relative', zIndex: 1 }}>
+                {checkingAuth ? 'Verificando...' : 'Tentar novamente'}
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* Auth: conectar Claude */}
+        {needAuth && !waitingAuth && !hasBlocker && (
+          <div style={styles.authCard}>
+            <div style={styles.blockerTitle}>Conectar conta Claude</div>
+            <p style={styles.blockerText}>
+              Faça login com Google ou email para ativar o Claude Code.
+            </p>
             <button className="ob-btn-primary" onClick={handleOpenAuth}>
               <span style={{ position: 'relative', zIndex: 1 }}>Abrir claude.ai →</span>
             </button>
           </div>
         )}
 
-        {/* Waiting auth */}
+        {/* Aguardando autenticação */}
         {waitingAuth && (
           <div style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontSize: 13, color: '#3a3d45', marginBottom: 6 }}>
@@ -187,12 +357,14 @@ export default function Setup({ onComplete }: SetupProps) {
               </svg>
               Aguardando autenticação...
             </div>
-            <p style={{ fontSize: 11, color: '#a8aab4', fontFamily: 'monospace' }}>Detectaremos automaticamente quando fizer login</p>
+            <p style={{ fontSize: 11, color: '#a8aab4', fontFamily: 'monospace' }}>
+              Detectaremos automaticamente quando fizer login
+            </p>
           </div>
         )}
 
-        {/* Done */}
-        {done && (
+        {/* Pronto */}
+        {isDone && (
           <button className="ob-btn-primary" onClick={onComplete} style={{ position: 'relative', zIndex: 1 }}>
             <span style={{ position: 'relative', zIndex: 1 }}>Abrir o IDE →</span>
           </button>
@@ -201,3 +373,23 @@ export default function Setup({ onComplete }: SetupProps) {
     </div>
   );
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  blocker: {
+    background: 'rgba(255,255,255,0.6)', borderRadius: 16, padding: '20px 22px',
+    marginBottom: 16, border: '1px solid rgba(217,48,48,0.12)',
+    position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: 10,
+  },
+  authCard: {
+    background: 'rgba(255,255,255,0.6)', borderRadius: 16, padding: '20px 22px',
+    position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: 10,
+  },
+  blockerTitle: { fontSize: 13, fontWeight: 500, color: '#d93030' },
+  blockerText: { fontSize: 13, color: '#72757f', lineHeight: 1.6, margin: 0, fontWeight: 300 },
+  blockerHint: { fontSize: 11, color: '#a8aab4', textAlign: 'center', margin: 0, fontFamily: 'monospace' },
+  btnSecondary: {
+    background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(0,0,0,0.08)',
+    borderRadius: 10, padding: '10px 18px', cursor: 'pointer',
+    color: '#72757f', fontSize: 13, fontFamily: 'DM Sans, -apple-system, sans-serif',
+  },
+};

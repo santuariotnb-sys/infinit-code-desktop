@@ -7,7 +7,7 @@ interface FileNode {
 
 interface ElectronAPI {
   terminal: {
-    create: (cwd?: string) => Promise<{ cols: number; rows: number }>;
+    create: (cwd?: string) => Promise<{ ok: boolean; cols?: number; rows?: number; error?: string }>;
     write: (data: string) => Promise<void>;
     resize: (cols: number, rows: number) => Promise<void>;
     kill: () => Promise<void>;
@@ -15,12 +15,13 @@ interface ElectronAPI {
     onInject?: (cb: (text: string) => void) => () => void;
   };
   files: {
-    read: (filePath: string) => Promise<string>;
-    write: (filePath: string, content: string) => Promise<void>;
-    readDir: (dirPath: string) => Promise<FileNode[]>;
+    read: (filePath: string) => Promise<{ ok: boolean; data?: string; error?: string }>;
+    write: (filePath: string, content: string) => Promise<{ ok: boolean; error?: string }>;
+    readDir: (dirPath: string) => Promise<{ ok: boolean; data?: FileNode[]; error?: string }>;
     openDialog: () => Promise<string | null>;
     getHome: () => Promise<string>;
     watch: (dirPath: string) => Promise<void>;
+    unwatch: () => Promise<void>;
     onChanged: (cb: (filePath: string) => void) => () => void;
   };
   claude: {
@@ -65,9 +66,11 @@ interface ElectronAPI {
     openExternal: (url: string) => Promise<void>;
   };
   setup: {
-    onProgress: (cb: (data: { step: string; pct: number; msg: string }) => void) => () => void;
+    onProgress: (cb: (data: { step: string; pct: number; msg: string; status: 'active' | 'done' | 'error' }) => void) => () => void;
     onComplete: (cb: () => void) => () => void;
     onNeedNode: (cb: () => void) => () => void;
+    onNeedGit?: (cb: () => void) => () => void;
+    onNeedClaude?: (cb: () => void) => () => void;
   };
   screenshot: () => Promise<string>;
 }

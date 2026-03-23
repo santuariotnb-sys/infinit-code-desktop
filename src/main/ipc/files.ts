@@ -92,25 +92,40 @@ function isPathSafe(filePath: string, allowedRoot?: string): boolean {
 
 export function registerFileHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('file:read', async (_event, filePath: string) => {
-    if (!isPathSafe(filePath)) {
-      throw new Error('Acesso negado a este caminho');
+    try {
+      if (!isPathSafe(filePath)) {
+        return { ok: false, error: 'Acesso negado a este caminho' };
+      }
+      const data = await fs.promises.readFile(filePath, 'utf-8');
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
     }
-    return fs.promises.readFile(filePath, 'utf-8');
   });
 
   ipcMain.handle('file:write', async (_event, filePath: string, content: string) => {
-    if (!isPathSafe(filePath)) {
-      throw new Error('Acesso negado a este caminho');
+    try {
+      if (!isPathSafe(filePath)) {
+        return { ok: false, error: 'Acesso negado a este caminho' };
+      }
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, content, 'utf-8');
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
     }
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.promises.writeFile(filePath, content, 'utf-8');
   });
 
   ipcMain.handle('file:readdir', async (_event, dirPath: string) => {
-    if (!isPathSafe(dirPath)) {
-      throw new Error('Acesso negado a este caminho');
+    try {
+      if (!isPathSafe(dirPath)) {
+        return { ok: false, error: 'Acesso negado a este caminho' };
+      }
+      const data = readDirRecursive(dirPath);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
     }
-    return readDirRecursive(dirPath);
   });
 
   ipcMain.handle('file:open-dialog', async () => {
@@ -126,6 +141,13 @@ export function registerFileHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('file:home', () => {
     return os.homedir();
+  });
+
+  ipcMain.handle('file:unwatch', () => {
+    if (watcher) {
+      watcher.close();
+      watcher = null;
+    }
   });
 
   ipcMain.handle('file:watch', (_event, dirPath: string) => {

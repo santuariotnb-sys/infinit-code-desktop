@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('api', {
     openDialog: () => ipcRenderer.invoke('file:open-dialog'),
     getHome: () => ipcRenderer.invoke('file:home'),
     watch: (dirPath: string) => ipcRenderer.invoke('file:watch', dirPath),
+    unwatch: () => ipcRenderer.invoke('file:unwatch'),
     onChanged: (cb: (filePath: string) => void) => {
       const handler = (_: Electron.IpcRendererEvent, p: string) => cb(p);
       ipcRenderer.on('file:changed', handler);
@@ -99,8 +100,8 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   setup: {
-    onProgress: (cb: (data: { step: string; pct: number; msg: string }) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, d: { step: string; pct: number; msg: string }) => cb(d);
+    onProgress: (cb: (data: { step: string; pct: number; msg: string; status: 'active' | 'done' | 'error' }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, d: { step: string; pct: number; msg: string; status: 'active' | 'done' | 'error' }) => cb(d);
       ipcRenderer.on('setup:progress', handler);
       return () => ipcRenderer.removeListener('setup:progress', handler);
     },
@@ -113,6 +114,16 @@ contextBridge.exposeInMainWorld('api', {
       const handler = () => cb();
       ipcRenderer.on('setup:need-node', handler);
       return () => ipcRenderer.removeListener('setup:need-node', handler);
+    },
+    onNeedGit: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on('setup:need-git', handler);
+      return () => ipcRenderer.removeListener('setup:need-git', handler);
+    },
+    onNeedClaude: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on('setup:need-claude', handler);
+      return () => ipcRenderer.removeListener('setup:need-claude', handler);
     },
   },
 

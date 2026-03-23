@@ -32,7 +32,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#dde0e5',
     show: false,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
@@ -69,6 +69,9 @@ function createWindow(): void {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdn.jsdelivr.net; " +
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+          "font-src 'self' data: https://fonts.gstatic.com; " +
           "connect-src 'self' https://api.anthropic.com https://*.supabase.co https://app-infinitcode.netlify.app ws://localhost:* http://localhost:*; " +
           "frame-src 'self' http://localhost:*; " +
           "img-src 'self' data: https:;"

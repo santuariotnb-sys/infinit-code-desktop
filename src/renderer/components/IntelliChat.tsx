@@ -176,7 +176,8 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
       setMentionQuery(query);
       if (projectPath) {
         try {
-          const tree = await window.api.files.readDir(projectPath);
+          const result = await window.api.files.readDir(projectPath);
+          const tree = result?.ok ? (result.data ?? []) : [];
           const flat = flattenTree(tree).filter((p) => p.toLowerCase().includes(query)).slice(0, 8);
           setMentionFiles(flat);
           setShowMentionList(flat.length > 0);
@@ -202,7 +203,8 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
 
   async function insertMention(filePath: string) {
     try {
-      const content = await window.api.files.read(filePath);
+      const result = await window.api.files.read(filePath);
+      const content = result?.ok ? (result.data ?? '') : '';
       const name = basename(filePath);
       setAttached((prev) => [...prev, { name, content, type: 'file' }]);
       // Remove @query from input

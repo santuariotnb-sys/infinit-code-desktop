@@ -14,10 +14,12 @@ const ENV_WITH_PATH = {
   PATH: `${process.env.PATH || ''}:${EXTRA_PATHS}`,
 };
 
-function progress(mainWindow: BrowserWindow, step: string, pct: number, msg: string) {
+type ProgressStatus = 'active' | 'done' | 'error';
+
+function progress(mainWindow: BrowserWindow, step: string, pct: number, msg: string, status: ProgressStatus = 'active') {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    console.log(`[auto-setup] step=${step} pct=${pct} msg=${msg}`);
-    mainWindow.webContents.send('setup:progress', { step, pct, msg });
+    console.log(`[auto-setup] step=${step} pct=${pct} status=${status} msg=${msg}`);
+    mainWindow.webContents.send('setup:progress', { step, pct, msg, status });
   }
 }
 
@@ -148,52 +150,60 @@ export async function runAutoSetup(mainWindow: BrowserWindow): Promise<void> {
     mainWindow.webContents.send('setup:need-node');
     return;
   }
-  progress(mainWindow, 'node', 20, 'Node.js ✓');
+  progress(mainWindow, 'node', 20, 'Node.js encontrado', 'done');
 
   // Step 2: Git
   progress(mainWindow, 'git', 20, 'Verificando Git...');
   const gitOk = checkGit();
   if (!gitOk) {
+    progress(mainWindow, 'git', 22, 'Git não encontrado — iniciando instalação...');
     if (process.platform === 'darwin') {
       exec('xcode-select --install');
+      progress(mainWindow, 'git', 25, 'Xcode Command Line Tools iniciado. Aguardando...');
     } else {
       shell.openExternal('https://git-scm.com/downloads');
+      progress(mainWindow, 'git', 25, 'Abrindo página de download. Instale e aguarde...');
     }
-    progress(mainWindow, 'git', 25, 'Instalando Git... aguarde');
-    await waitForGit(300000);
+    const gitInstalled = await waitForGit(300000);
+    if (!gitInstalled) {
+      progress(mainWindow, 'git', 25, 'Git não detectado após 5 minutos. Instale em git-scm.com e reinicie.', 'error');
+      mainWindow.webContents.send('setup:need-git');
+      return;
+    }
   }
-  progress(mainWindow, 'git', 40, 'Git ✓');
+  progress(mainWindow, 'git', 40, 'Git encontrado', 'done');
 
   // Step 3: Claude Code
   progress(mainWindow, 'claude', 40, 'Verificando Claude Code...');
   const claudeOk = checkClaude();
   if (!claudeOk) {
-    progress(mainWindow, 'claude', 45, 'Instalando Claude Code...');
+    progress(mainWindow, 'claude', 45, 'Instalando Claude Code via npm...');
     const installed = await installClaude();
     if (!installed) {
-      progress(mainWindow, 'claude', 45, 'Erro ao instalar Claude Code. Instale manualmente: npm i -g @anthropic-ai/claude-code');
+      progress(mainWindow, 'claude', 45, 'Falha ao instalar. Execute: npm install -g @anthropic-ai/claude-code', 'error');
+      mainWindow.webContents.send('setup:need-claude');
       return;
     }
   }
-  progress(mainWindow, 'claude', 60, 'Claude Code ✓');
+  progress(mainWindow, 'claude', 60, 'Claude Code instalado', 'done');
 
   // Step 4: Skills
   if (!store.get('skills-installed')) {
-    progress(mainWindow, 'skills', 60, 'Configurando skills...');
+    progress(mainWindow, 'skills', 60, 'Instalando skills Infinit...');
     installSkills();
     store.set('skills-installed', true);
   }
-  progress(mainWindow, 'skills', 80, 'Skills ✓');
+  progress(mainWindow, 'skills', 80, 'Skills configuradas', 'done');
 
   // Step 5: Claude Settings
   if (!store.get('claude-configured')) {
-    progress(mainWindow, 'config', 80, 'Configurando Claude Code...');
+    progress(mainWindow, 'config', 80, 'Aplicando configurações...');
     writeClaudeSettings();
     store.set('claude-configured', true);
   }
-  progress(mainWindow, 'config', 90, 'Configurado ✓');
+  progress(mainWindow, 'config', 90, 'Configurações aplicadas', 'done');
 
-  progress(mainWindow, 'done', 100, 'Pronto!');
+  progress(mainWindow, 'done', 100, 'Ambiente pronto!', 'done');
   store.set('setup-complete', true);
   mainWindow.webContents.send('setup:complete');
 }
