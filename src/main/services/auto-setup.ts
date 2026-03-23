@@ -7,27 +7,39 @@ import ElectronStore from 'electron-store';
 
 const store = new ElectronStore({ name: 'infinit-setup' });
 
+// Fix PATH para Electron no Mac — não herda PATH do shell do usuário
+const EXTRA_PATHS = '/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+const ENV_WITH_PATH = {
+  ...process.env,
+  PATH: `${process.env.PATH || ''}:${EXTRA_PATHS}`,
+};
+
 function progress(mainWindow: BrowserWindow, step: string, pct: number, msg: string) {
   if (mainWindow && !mainWindow.isDestroyed()) {
+    console.log(`[auto-setup] step=${step} pct=${pct} msg=${msg}`);
     mainWindow.webContents.send('setup:progress', { step, pct, msg });
   }
 }
 
 function checkNode(): boolean {
   try {
-    const version = execSync('node --version', { encoding: 'utf-8', timeout: 5000 }).trim();
+    const version = execSync('node --version', { encoding: 'utf-8', timeout: 5000, env: ENV_WITH_PATH }).trim();
     const major = parseInt(version.replace('v', '').split('.')[0], 10);
+    console.log(`[auto-setup] node version: ${version}, major: ${major}`);
     return major >= 18;
-  } catch {
+  } catch (e) {
+    console.error('[auto-setup] checkNode failed:', e);
     return false;
   }
 }
 
 function checkGit(): boolean {
   try {
-    execSync('git --version', { encoding: 'utf-8', timeout: 5000 });
+    const out = execSync('git --version', { encoding: 'utf-8', timeout: 5000, env: ENV_WITH_PATH }).trim();
+    console.log(`[auto-setup] git: ${out}`);
     return true;
-  } catch {
+  } catch (e) {
+    console.error('[auto-setup] checkGit failed:', e);
     return false;
   }
 }
@@ -35,25 +47,30 @@ function checkGit(): boolean {
 function checkClaude(): boolean {
   try {
     const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
-    execSync(cmd, { encoding: 'utf-8', timeout: 5000 });
+    const out = execSync(cmd, { encoding: 'utf-8', timeout: 5000, env: ENV_WITH_PATH }).trim();
+    console.log(`[auto-setup] claude path: ${out}`);
     return true;
-  } catch {
+  } catch (e) {
+    console.error('[auto-setup] checkClaude failed:', e);
     return false;
   }
 }
 
 function installClaude(): Promise<boolean> {
   return new Promise((resolve) => {
-    exec('npm install -g @anthropic-ai/claude-code', { timeout: 120000 }, (error) => {
+    console.log('[auto-setup] installing claude-code...');
+    exec('npm install -g @anthropic-ai/claude-code', { timeout: 120000, env: ENV_WITH_PATH }, (error) => {
       if (error) {
+        console.error('[auto-setup] npm install failed, trying sudo:', error.message);
         if (process.platform !== 'win32') {
-          exec('sudo npm install -g @anthropic-ai/claude-code', { timeout: 120000 }, (err2) => {
+          exec('sudo npm install -g @anthropic-ai/claude-code', { timeout: 120000, env: ENV_WITH_PATH }, (err2) => {
             resolve(!err2);
           });
         } else {
           resolve(false);
         }
       } else {
+        console.log('[auto-setup] claude-code installed successfully');
         resolve(true);
       }
     });
@@ -115,7 +132,10 @@ function writeClaudeSettings(): void {
 }
 
 export async function runAutoSetup(mainWindow: BrowserWindow): Promise<void> {
+  console.log('[auto-setup] starting, setup-complete:', store.get('setup-complete'));
+
   if (store.get('setup-complete')) {
+    console.log('[auto-setup] already complete, emitting setup:complete');
     mainWindow.webContents.send('setup:complete');
     return;
   }

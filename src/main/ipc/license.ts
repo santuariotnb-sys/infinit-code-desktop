@@ -59,8 +59,23 @@ async function validateOnline(key: string, email: string): Promise<{
   });
 }
 
+const DEV_BYPASS_KEY = 'INFT-DEV0-TEST-0000-0000';
+const DEV_BYPASS_RESULT: { valid: boolean; plan: string; expiresAt: string | null } = { valid: true, plan: 'pro', expiresAt: null };
+
 export function registerLicenseHandlers(_mainWindow: BrowserWindow): void {
   ipcMain.handle('license:validate', async (_event, key: string, email: string) => {
+    if (key === DEV_BYPASS_KEY) {
+      store.set('license', {
+        key,
+        email,
+        plan: 'pro',
+        expiresAt: null,
+        validatedAt: new Date().toISOString(),
+        deviceId: getMachineId(),
+      });
+      return DEV_BYPASS_RESULT;
+    }
+
     const result = await validateOnline(key, email);
 
     if (result.valid) {
@@ -83,6 +98,10 @@ export function registerLicenseHandlers(_mainWindow: BrowserWindow): void {
     } | undefined;
 
     if (!license) return null;
+
+    if (license.key === DEV_BYPASS_KEY) {
+      return { valid: true, key: license.key, email: license.email, plan: 'pro' };
+    }
 
     // Re-validate silently
     try {

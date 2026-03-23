@@ -219,4 +219,47 @@ Ao revisar e escrever código:
 
     return { installed };
   });
+
+  // ── Voice status ─────────────────────────────────────────
+  ipcMain.handle('claude:voice-status', () => {
+    try {
+      const versionRaw = execSync('claude --version', { encoding: 'utf-8', timeout: 5000 }).trim();
+      const match = versionRaw.match(/(\d+)\.(\d+)\.(\d+)/);
+      if (!match) return { supported: false, version: versionRaw };
+      const [, major, minor, patch] = match.map(Number);
+      // Voice available since 1.0.69
+      const supported = major > 1 || (major === 1 && minor > 0) || (major === 1 && minor === 0 && patch >= 69);
+      return { supported, version: versionRaw };
+    } catch {
+      return { supported: false, version: '' };
+    }
+  });
+
+  // ── Voice start — inject /voice into terminal ─────────────
+  ipcMain.handle('claude:voice-start', () => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:inject', '/voice\r');
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  // ── Write voice settings ──────────────────────────────────
+  ipcMain.handle('claude:write-voice-settings', () => {
+    try {
+      const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+      let settings: Record<string, unknown> = {};
+      if (fs.existsSync(settingsPath)) {
+        try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')); } catch { /* ignore */ }
+      }
+      settings.voice = { language: 'pt-BR', pushToTalk: 'space' };
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
 }

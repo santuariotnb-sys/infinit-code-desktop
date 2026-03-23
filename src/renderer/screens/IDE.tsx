@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 interface FileNode {
   name: string;
@@ -6,12 +6,14 @@ interface FileNode {
   type: 'file' | 'folder';
   children?: FileNode[];
 }
+
 import FileTree from '../components/FileTree';
 import Editor from '../components/Editor';
 import Terminal from '../components/Terminal';
 import Preview from '../components/Preview';
 import IntelliChat from '../components/IntelliChat';
 import Toolbar from '../components/Toolbar';
+import GitPanel from '../components/GitPanel';
 
 export default function IDE() {
   const [projectPath, setProjectPath] = useState<string | null>(null);
@@ -19,34 +21,65 @@ export default function IDE() {
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [modified, setModified] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [previewPort, setPreviewPort] = useState(3000);
-  const [sidebarWidth] = useState(240);
-  const [terminalHeight] = useState(250);
 
-  const loadFiles = useCallback(async (dirPath: string) => {
-    try {
-      const tree = await window.api.files.readDir(dirPath);
-      setFiles(tree);
-    } catch {
-      setFiles([]);
-    }
+  // Panel visibility
+  const [showPreview, setShowPreview] = useState(false);
+  const [showChat, setShowChat] = useState(true);
+  const [showFileTree, setShowFileTree] = useState(true);
+  const [showGit, setShowGit] = useState(false);
+  const [terminalExpanded, setTerminalExpanded] = useState(true);
+
+  // Terminal output buffer (for Preview and IntelliChat)
+  const [terminalOutput, setTerminalOutput] = useState('');
+  const terminalOutputRef = useRef('');
+
+  // Git change count for badge
+  const [gitChangeCount, setGitChangeCount] = useState(0);
+
+  // Live port detected
+  const [detectedPort, setDetectedPort] = useState<number | null>(null);
+
+  const TERMINAL_HEIGHT = terminalExpanded ? 240 : 28;
+  const SIDEBAR_WIDTH = showFileTree ? 180 : 0;
+  const PREVIEW_WIDTH = showPreview ? '45%' : '0';
+  const CHAT_WIDTH = 400;
+
+  const loadFiles = useCallback(async (dir: string) => {
+    try { setFiles(await window.api.files.readDir(dir)); } catch { setFiles([]); }
   }, []);
 
   useEffect(() => {
-    if (projectPath) {
-      loadFiles(projectPath);
-      window.api.terminal.create(projectPath);
-      window.api.files.watch(projectPath);
-
-      const cleanup = window.api.files.onChanged(() => {
-        loadFiles(projectPath);
-      });
-
-      return cleanup;
-    }
+    if (!projectPath) return;
+    loadFiles(projectPath);
+    window.api.terminal.create(projectPath);
+    window.api.files.watch(projectPath);
+    const cleanup = window.api.files.onChanged(() => loadFiles(projectPath));
+    return cleanup;
   }, [projectPath, loadFiles]);
+
+  // Collect terminal output for Preview server detection & IntelliChat
+  useEffect(() => {
+    const cleanup = window.api.terminal.onData((data: string) => {
+      terminalOutputRef.current = (terminalOutputRef.current + data).split('\n').slice(-300).join('\n');
+      setTerminalOutput(terminalOutputRef.current);
+
+      // Detect server port for auto-showing preview
+      const portMatch = data.match(/(?:localhost|127\.0\.0\.1):(\d{4,5})/i)
+        || data.match(/Local:\s+http:\/\/localhost:(\d{4,5})/i);
+      if (portMatch) {
+        const p = parseInt(portMatch[1], 10);
+        setDetectedPort(p);
+        setShowPreview(true);
+      }
+    });
+
+    // Handle terminal inject from voice
+    const injectCleanup = window.api.terminal.onInject?.((text: string) => {
+      window.api.terminal.write(text);
+    });
+
+    return () => { cleanup(); injectCleanup?.(); };
+  }, []);
 
   async function handleOpenFolder() {
     const path = await window.api.files.openDialog();
@@ -54,21 +87,18 @@ export default function IDE() {
       setProjectPath(path);
       setOpenFile(null);
       setFileContent('');
+      setModified(false);
     }
   }
 
   async function handleSelectFile(filePath: string) {
-    if (modified && openFile) {
-      await handleSave();
-    }
+    if (modified && openFile) await handleSave();
     try {
       const content = await window.api.files.read(filePath);
       setOpenFile(filePath);
       setFileContent(content);
       setModified(false);
-    } catch {
-      // file may not be readable
-    }
+    } catch { /* not readable */ }
   }
 
   async function handleSave() {
@@ -79,38 +109,38 @@ export default function IDE() {
   }
 
   function handleContentChange(value: string | undefined) {
-    if (value !== undefined) {
-      setFileContent(value);
-      setModified(true);
-    }
+    if (value !== undefined) { setFileContent(value); setModified(true); }
   }
 
-  function handleSendToTerminal(command: string) {
-    window.api.terminal.write(command + '\r');
+  function handleTerminalInject(text: string) {
+    window.api.terminal.write(text);
+  }
+
+  function handleRunDev() {
+    window.api.terminal.write('npm run dev\r');
   }
 
   // Keyboard shortcuts
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        handleSave();
-      }
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === 's') { e.preventDefault(); handleSave(); }
+      if (mod && e.key === 'b') { e.preventDefault(); setShowFileTree((v) => !v); }
+      if (mod && e.key === 'j') { e.preventDefault(); setShowChat((v) => !v); }
+      if (mod && e.key === '`') { e.preventDefault(); setTerminalExpanded((v) => !v); }
     }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [openFile, fileContent, modified]);
 
   if (!projectPath) {
     return (
       <div style={styles.welcome}>
         <div style={styles.welcomeContent}>
-          <span style={styles.welcomeIcon}>∞</span>
-          <h1 style={styles.welcomeTitle}>Infinit Code</h1>
-          <p style={styles.welcomeText}>Abra uma pasta para comecar</p>
-          <button style={styles.openButton} onClick={handleOpenFolder}>
-            Abrir Pasta
-          </button>
+          <span style={styles.logo}>∞</span>
+          <h1 style={styles.title}>Infinit Code</h1>
+          <p style={styles.subtitle}>Abra uma pasta para começar</p>
+          <button style={styles.openBtn} onClick={handleOpenFolder}>Abrir Pasta</button>
         </div>
       </div>
     );
@@ -126,55 +156,83 @@ export default function IDE() {
         modified={modified}
         onSave={handleSave}
         onOpenFolder={handleOpenFolder}
-        onTogglePreview={() => setShowPreview(!showPreview)}
-        onToggleChat={() => setShowChat(!showChat)}
+        onTogglePreview={() => setShowPreview((v) => !v)}
+        onToggleChat={() => setShowChat((v) => !v)}
+        onToggleGit={() => setShowGit((v) => !v)}
         showPreview={showPreview}
         showChat={showChat}
+        showGit={showGit}
+        gitChangeCount={gitChangeCount}
+        livePort={detectedPort}
       />
 
       <div style={styles.main}>
-        {/* Sidebar */}
-        <div style={{ ...styles.sidebar, width: sidebarWidth }}>
-          <FileTree
-            files={files}
-            selectedFile={openFile}
-            onSelectFile={handleSelectFile}
-          />
-        </div>
+        {/* File Tree */}
+        {showFileTree && (
+          <div style={{ ...styles.sidebar, width: SIDEBAR_WIDTH }}>
+            <FileTree files={files} selectedFile={openFile} onSelectFile={handleSelectFile} />
+          </div>
+        )}
 
-        {/* Editor area */}
+        {/* Editor + Terminal */}
         <div style={styles.editorArea}>
-          <div style={{ ...styles.editorPane, marginBottom: terminalHeight }}>
+          <div style={{ ...styles.editorPane, height: `calc(100% - ${TERMINAL_HEIGHT}px)` }}>
             {openFile ? (
-              <Editor
-                filePath={openFile}
-                content={fileContent}
-                onChange={handleContentChange}
-              />
+              <Editor filePath={openFile} content={fileContent} onChange={handleContentChange} />
             ) : (
-              <div style={styles.noFile}>
-                <p style={styles.noFileText}>Selecione um arquivo para editar</p>
-              </div>
+              <div style={styles.noFile}><p style={styles.noFileText}>Selecione um arquivo para editar</p></div>
             )}
           </div>
 
           {/* Terminal */}
-          <div style={{ ...styles.terminal, height: terminalHeight }}>
-            <Terminal />
+          <div style={{ ...styles.terminalPanel, height: TERMINAL_HEIGHT }}>
+            <div
+              style={styles.terminalHandle}
+              onClick={() => setTerminalExpanded((v) => !v)}
+              title="Cmd+` para toggle"
+            >
+              <span style={styles.terminalDot} />
+              <span style={styles.terminalLabel}>Terminal</span>
+              <span style={styles.terminalToggle}>{terminalExpanded ? '▼' : '▲'}</span>
+            </div>
+            {terminalExpanded && (
+              <div style={styles.terminalBody}>
+                <Terminal />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Preview panel */}
+        {/* Preview */}
         {showPreview && (
-          <div style={styles.previewPanel}>
-            <Preview port={previewPort} onPortChange={setPreviewPort} />
+          <div style={{ ...styles.panel, width: PREVIEW_WIDTH, minWidth: 280 }}>
+            <Preview
+              terminalOutput={terminalOutput}
+              onRunDev={handleRunDev}
+            />
           </div>
         )}
 
-        {/* Chat panel */}
+        {/* Git Panel */}
+        {showGit && (
+          <div style={{ ...styles.panel, width: 260 }}>
+            <GitPanel
+              projectPath={projectPath}
+              onSyncProgress={(msg) => setTerminalOutput((prev) => prev + '\n[git] ' + msg)}
+            />
+          </div>
+        )}
+
+        {/* IntelliChat */}
         {showChat && (
-          <div style={styles.chatPanel}>
-            <IntelliChat onSendCommand={handleSendToTerminal} />
+          <div style={{ ...styles.panel, width: CHAT_WIDTH }}>
+            <IntelliChat
+              projectPath={projectPath}
+              activeFile={openFile ? { path: openFile, content: fileContent } : null}
+              onTerminalInject={handleTerminalInject}
+              terminalOutput={terminalOutput}
+              onOpenFile={handleSelectFile}
+            />
           </div>
         )}
       </div>
@@ -183,97 +241,28 @@ export default function IDE() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    height: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    background: '#0a0a0a',
+  container: { height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0a0a' },
+  main: { flex: 1, display: 'flex', overflow: 'hidden' },
+  sidebar: { background: '#111', borderRight: '1px solid #1e1e1e', overflow: 'auto', flexShrink: 0 },
+  editorArea: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' },
+  editorPane: { overflow: 'hidden', flexShrink: 0 },
+  terminalPanel: { borderTop: '1px solid #1e1e1e', background: '#0a0a0a', flexShrink: 0, display: 'flex', flexDirection: 'column' },
+  terminalHandle: {
+    display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px',
+    background: '#111', cursor: 'pointer', flexShrink: 0, userSelect: 'none',
+    borderBottom: '1px solid #1e1e1e',
   },
-  main: {
-    flex: 1,
-    display: 'flex',
-    overflow: 'hidden',
-  },
-  sidebar: {
-    background: '#111',
-    borderRight: '1px solid #2a2a2a',
-    overflow: 'auto',
-    flexShrink: 0,
-  },
-  editorArea: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    position: 'relative',
-    minWidth: 0,
-  },
-  editorPane: {
-    flex: 1,
-    overflow: 'hidden',
-  },
-  terminal: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTop: '1px solid #2a2a2a',
-    background: '#0a0a0a',
-  },
-  previewPanel: {
-    width: '400px',
-    borderLeft: '1px solid #2a2a2a',
-    flexShrink: 0,
-  },
-  chatPanel: {
-    width: '350px',
-    borderLeft: '1px solid #2a2a2a',
-    flexShrink: 0,
-    background: '#111',
-  },
-  noFile: {
-    height: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  noFileText: {
-    color: '#555',
-    fontSize: '14px',
-  },
-  welcome: {
-    height: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#0a0a0a',
-  },
-  welcomeContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '20px',
-  },
-  welcomeIcon: {
-    fontSize: '64px',
-    color: '#00ff88',
-  },
-  welcomeTitle: {
-    fontSize: '32px',
-    fontWeight: 700,
-    color: '#fff',
-  },
-  welcomeText: {
-    color: '#888',
-    fontSize: '16px',
-  },
-  openButton: {
-    background: '#00ff88',
-    color: '#0a0a0a',
-    border: 'none',
-    padding: '14px 40px',
-    borderRadius: '10px',
-    fontSize: '16px',
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
+  terminalDot: { width: 6, height: 6, borderRadius: '50%', background: '#00ff88', flexShrink: 0 },
+  terminalLabel: { color: '#555', fontSize: 11, flex: 1 },
+  terminalToggle: { color: '#333', fontSize: 10 },
+  terminalBody: { flex: 1, overflow: 'hidden' },
+  panel: { borderLeft: '1px solid #1e1e1e', flexShrink: 0, overflow: 'hidden' },
+  noFile: { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  noFileText: { color: '#333', fontSize: 13 },
+  welcome: { height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' },
+  welcomeContent: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 },
+  logo: { fontSize: 72, color: '#00ff88', lineHeight: 1 },
+  title: { fontSize: 32, fontWeight: 700, color: '#fff', margin: 0 },
+  subtitle: { color: '#555', fontSize: 15, margin: 0 },
+  openBtn: { background: '#00ff88', color: '#0a0a0a', border: 'none', padding: '13px 40px', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: 'pointer' },
 };

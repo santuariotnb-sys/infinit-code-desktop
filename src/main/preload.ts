@@ -11,6 +11,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('terminal:data', handler);
       return () => ipcRenderer.removeListener('terminal:data', handler);
     },
+    onInject: (cb: (text: string) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, t: string) => cb(t);
+      ipcRenderer.on('terminal:inject', handler);
+      return () => ipcRenderer.removeListener('terminal:inject', handler);
+    },
   },
 
   files: {
@@ -33,6 +38,9 @@ contextBridge.exposeInMainWorld('api', {
     checkAuth: () => ipcRenderer.invoke('claude:check-auth'),
     openAuth: () => ipcRenderer.invoke('claude:open-auth'),
     installSkills: () => ipcRenderer.invoke('claude:install-skills'),
+    voiceStatus: () => ipcRenderer.invoke('claude:voice-status'),
+    voiceStart: () => ipcRenderer.invoke('claude:voice-start'),
+    writeVoiceSettings: () => ipcRenderer.invoke('claude:write-voice-settings'),
     onInstallProgress: (cb: (data: { pct: number; msg: string }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, d: { pct: number; msg: string }) => cb(d);
       ipcRenderer.on('claude:install-progress', handler);
@@ -47,8 +55,28 @@ contextBridge.exposeInMainWorld('api', {
 
   github: {
     checkInstalled: () => ipcRenderer.invoke('github:check-installed'),
-    clone: (url: string, dest: string) => ipcRenderer.invoke('github:clone', url, dest),
-    getStatus: (cwd: string) => ipcRenderer.invoke('github:status', cwd),
+    connectOAuth: () => ipcRenderer.invoke('github:connect-oauth'),
+    authStatus: () => ipcRenderer.invoke('github:auth-status'),
+    disconnect: () => ipcRenderer.invoke('github:disconnect'),
+    clone: (repo: string, dest: string) => ipcRenderer.invoke('github:clone', repo, dest),
+    listRepos: () => ipcRenderer.invoke('github:list-repos'),
+    gitStatus: (cwd: string) => ipcRenderer.invoke('github:git-status', cwd),
+    sync: (cwd: string, branch: string) => ipcRenderer.invoke('github:sync', cwd, branch),
+    pull: (cwd: string, branch: string) => ipcRenderer.invoke('github:pull', cwd, branch),
+    push: (cwd: string, branch: string) => ipcRenderer.invoke('github:push', cwd, branch),
+    branches: (cwd: string) => ipcRenderer.invoke('github:branches', cwd),
+    createBranch: (cwd: string, name: string) => ipcRenderer.invoke('github:create-branch', cwd, name),
+    watchForChanges: (projectPath: string) => ipcRenderer.invoke('github:watch-for-changes', projectPath),
+    onSyncProgress: (cb: (data: { step?: string; msg?: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, d: { step?: string; msg?: string }) => cb(d);
+      ipcRenderer.on('github:sync-progress', handler);
+      return () => ipcRenderer.removeListener('github:sync-progress', handler);
+    },
+    onLocalChanges: (cb: (files: string[]) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, d: { files: string[] }) => cb(d.files);
+      ipcRenderer.on('github:local-changes', handler);
+      return () => ipcRenderer.removeListener('github:local-changes', handler);
+    },
   },
 
   license: {
@@ -87,4 +115,6 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('setup:need-node', handler);
     },
   },
+
+  screenshot: () => ipcRenderer.invoke('window:screenshot'),
 });

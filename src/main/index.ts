@@ -1,3 +1,4 @@
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 import { app, BrowserWindow, session, shell, ipcMain } from 'electron';
 import path from 'path';
 import { registerTerminalHandlers } from './ipc/terminal';
@@ -47,6 +48,15 @@ function createWindow(): void {
     mainWindow?.show();
   });
 
+  // Aguarda o renderer montar e registrar os listeners antes de emitir eventos de setup
+  mainWindow.webContents.once('did-finish-load', () => {
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        runAutoSetup(mainWindow);
+      }
+    }, 600);
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -71,8 +81,18 @@ function createWindow(): void {
   registerTerminalHandlers(mainWindow);
   registerFileHandlers(mainWindow);
   registerClaudeHandlers(mainWindow);
-  registerGithubHandlers();
+  registerGithubHandlers(mainWindow);
   registerLicenseHandlers(mainWindow);
+
+  // Screenshot
+  ipcMain.handle('window:screenshot', async () => {
+    try {
+      const img = await mainWindow!.webContents.capturePage();
+      return img.toDataURL();
+    } catch {
+      return '';
+    }
+  });
 
   // Shell open external
   ipcMain.handle('shell:open', async (_event, url: string) => {
@@ -81,9 +101,6 @@ function createWindow(): void {
       await shell.openExternal(url);
     }
   });
-
-  // Auto setup
-  runAutoSetup(mainWindow);
 
   // Auto updater
   initUpdater(mainWindow);
