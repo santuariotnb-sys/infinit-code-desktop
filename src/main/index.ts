@@ -77,30 +77,29 @@ function createWindow(): void {
     });
   });
 
-  // Register IPC handlers
-  registerTerminalHandlers(mainWindow);
-  registerFileHandlers(mainWindow);
-  registerClaudeHandlers(mainWindow);
-  registerGithubHandlers(mainWindow);
-  registerLicenseHandlers(mainWindow);
+  // Register IPC handlers only once (guard against window re-creation on activate)
+  if (!handlersRegistered) {
+    handlersRegistered = true;
+    registerTerminalHandlers(mainWindow);
+    registerFileHandlers(mainWindow);
+    registerClaudeHandlers(mainWindow);
+    registerGithubHandlers(mainWindow);
+    registerLicenseHandlers(mainWindow);
 
-  // Screenshot
-  ipcMain.handle('window:screenshot', async () => {
-    try {
-      const img = await mainWindow!.webContents.capturePage();
-      return img.toDataURL();
-    } catch {
-      return '';
-    }
-  });
+    ipcMain.handle('window:screenshot', async () => {
+      try {
+        const img = await mainWindow!.webContents.capturePage();
+        return img.toDataURL();
+      } catch { return ''; }
+    });
 
-  // Shell open external
-  ipcMain.handle('shell:open', async (_event, url: string) => {
-    const parsed = new URL(url);
-    if (['https:', 'http:'].includes(parsed.protocol)) {
-      await shell.openExternal(url);
-    }
-  });
+    ipcMain.handle('shell:open', async (_event, url: string) => {
+      const parsed = new URL(url);
+      if (['https:', 'http:'].includes(parsed.protocol)) {
+        await shell.openExternal(url);
+      }
+    });
+  }
 
   // Auto updater
   initUpdater(mainWindow);
@@ -175,11 +174,6 @@ function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.on('ready', () => {
-  buildMenu();
-  createWindow();
-});
-
 app.on('second-instance', () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -188,13 +182,16 @@ app.on('second-instance', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+let handlersRegistered = false;
+
+app.whenReady().then(() => {
+  buildMenu();
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 });
