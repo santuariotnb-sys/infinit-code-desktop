@@ -60,12 +60,34 @@ function readDirRecursive(dirPath: string, depth: number = 0, maxDepth: number =
 
 function isPathSafe(filePath: string, allowedRoot?: string): boolean {
   const resolved = path.resolve(filePath);
+
+  // Reject path traversal sequences before resolving
+  if (filePath.includes('..')) return false;
+
   if (allowedRoot) {
-    return resolved.startsWith(path.resolve(allowedRoot));
+    const root = path.resolve(allowedRoot);
+    return resolved === root || resolved.startsWith(root + path.sep);
   }
-  // Block access to sensitive system paths
-  const blocked = ['/etc/shadow', '/etc/passwd'];
-  return !blocked.some(b => resolved.startsWith(b));
+
+  // Block sensitive system directories
+  const BLOCKED_PREFIXES = process.platform === 'win32'
+    ? ['C:\\Windows\\', 'C:\\System32\\', 'C:\\Program Files\\']
+    : ['/etc/', '/var/', '/usr/', '/bin/', '/sbin/', '/boot/', '/proc/', '/sys/',
+       '/private/etc/', '/private/var/'];
+
+  if (BLOCKED_PREFIXES.some((b) => resolved.startsWith(b))) return false;
+
+  // Reject symlinks pointing outside home
+  try {
+    const stat = fs.lstatSync(resolved);
+    if (stat.isSymbolicLink()) {
+      const real = fs.realpathSync(resolved);
+      const home = path.resolve(os.homedir());
+      if (!real.startsWith(home)) return false;
+    }
+  } catch { /* path doesn't exist yet — allow (write case) */ }
+
+  return true;
 }
 
 export function registerFileHandlers(mainWindow: BrowserWindow): void {

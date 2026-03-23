@@ -36,7 +36,14 @@ async function validateOnline(key: string, email: string): Promise<{
 
     let responseData = '';
 
+    // Timeout de 10s para não travar o app
+    const timeout = setTimeout(() => {
+      request.abort?.();
+      resolve({ valid: false, error: 'Tempo de conexão esgotado. Verifique sua internet.' });
+    }, 10_000);
+
     request.on('response', (response) => {
+      clearTimeout(timeout);
       response.on('data', (chunk) => {
         responseData += chunk.toString();
       });
@@ -51,6 +58,7 @@ async function validateOnline(key: string, email: string): Promise<{
     });
 
     request.on('error', (error) => {
+      clearTimeout(timeout);
       resolve({ valid: false, error: error.message });
     });
 

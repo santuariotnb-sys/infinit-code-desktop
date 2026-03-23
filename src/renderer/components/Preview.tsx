@@ -9,11 +9,14 @@ const VIEWPORT: Record<ViewportSize, string> = {
 };
 
 const SERVER_REGEXES = [
-  /(?:localhost|127\.0\.0\.1):(\d{4,5})/,
-  /ready on.*?:(\d{4,5})/i,
-  /started server.*?(\d{4,5})/i,
-  /listening.*?port.*?(\d{4,5})/i,
-  /Local:\s+http:\/\/localhost:(\d{4,5})/i,
+  /(?:localhost|127\.0\.0\.1|\[::1\]):(\d{4,5})/,
+  /Local:\s+https?:\/\/(?:localhost|127\.0\.0\.1):(\d{4,5})/i,
+  /ready (?:on|started server on).*?:(\d{4,5})/i,
+  /(?:started|listening|running|available).*?port[:\s]+(\d{4,5})/i,
+  /on port[:\s]+(\d{4,5})/i,
+  /:\s*(\d{4,5})\s*(?:→|->|\()/,
+  /App running at.*?:(\d{4,5})/i,
+  /Network:.*?:(\d{4,5})/i,
 ];
 
 const HMR_REGEXES = [/HMR/, /Fast Refresh/, /reloaded/i, /hot update/i];

@@ -31,24 +31,31 @@ interface ActionCard {
 // Detect Claude actions in terminal output
 function parseActionCards(output: string): ActionCard[] {
   const cards: ActionCard[] = [];
-  const lines = output.split('\n').slice(-30);
+  const lines = output.split('\n').slice(-40);
   for (const line of lines) {
-    const fileMatch = line.match(/(?:Writing to|Created|Edited?)\s+(src\/[^\s]+|[^\s]+\.[a-z]{1,5})/i);
-    if (fileMatch && fileMatch[1]) {
-      cards.push({ id: fileMatch[1], type: 'file', label: `📄 ${basename(fileMatch[1])}`, value: fileMatch[1] });
+    // File writes: "Write(path/file.tsx)" or "Edit(path/file.tsx)" or "Writing to src/..."
+    const fileMatch =
+      line.match(/(?:Write|Edit|Read)\(\s*["']?([^"')]+\.[a-z]{1,6})["']?\s*\)/i) ||
+      line.match(/(?:Writing to|Created|Edited?|Saved?)\s+((?:src|app|pages|components|lib)\/[^\s]+|[^\s]+\.[a-z]{1,5})/i);
+    if (fileMatch && fileMatch[1] && !fileMatch[1].includes('*')) {
+      const fp = fileMatch[1].trim();
+      cards.push({ id: fp, type: 'file', label: `📄 ${basename(fp)}`, value: fp });
     }
-    const cmdMatch = line.match(/^\s*\$\s+(.+)$/) || line.match(/^\s*(npm\s+\w+|npx\s+\S+)/);
-    if (cmdMatch) {
-      cards.push({ id: cmdMatch[1], type: 'command', label: `$ ${cmdMatch[1]}`, value: cmdMatch[1] });
+    // Terminal commands
+    const cmdMatch = line.match(/^\s*\$\s+(.+)$/) || line.match(/Bash\(\s*["']?([^"'\n)]{3,80})["']?\s*\)/);
+    if (cmdMatch && cmdMatch[1]) {
+      const cmd = cmdMatch[1].trim();
+      cards.push({ id: cmd, type: 'command', label: `$ ${cmd.slice(0, 50)}`, value: cmd });
     }
-    const urlMatch = line.match(/http:\/\/localhost:(\d{4,5})/);
+    // Localhost URLs
+    const urlMatch = line.match(/https?:\/\/localhost:(\d{4,5})/);
     if (urlMatch) {
       cards.push({ id: urlMatch[0], type: 'url', label: `🌐 localhost:${urlMatch[1]}`, value: urlMatch[0] });
     }
   }
   // Deduplicate
   const seen = new Set<string>();
-  return cards.filter((c) => { if (seen.has(c.id)) return false; seen.add(c.id); return true; }).slice(0, 4);
+  return cards.filter((c) => { if (seen.has(c.id)) return false; seen.add(c.id); return true; }).slice(0, 5);
 }
 
 function buildContext(msg: string, activeFile: { path: string; content: string } | null, terminalOutput: string): string {
@@ -91,14 +98,16 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
 
   // Detect Claude working / done from terminal output
   useEffect(() => {
-    const lines = terminalOutput.split('\n').slice(-5).join('\n');
-    if (/claude is working|running tool|writing|editing/i.test(lines)) {
+    const lines = terminalOutput.split('\n').slice(-8).join('\n');
+    // Claude Code working: spinner chars, tool calls, writing files
+    if (/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]|Bash\(|Read\(|Write\(|Edit\(|Glob\(|Grep\(|running tool|writing|editing|analyzing/i.test(lines)) {
       setClaudeStatus('working');
-    } else if (/✓|done|complete|finished/i.test(lines)) {
+    } else if (/✓\s*(Completed|Done|Finished)|^>\s*$/m.test(lines) || /\$\s*$/.test(lines.slice(-80))) {
+      // Claude returned prompt — done
       setClaudeStatus('done');
       if (statusTimer.current) clearTimeout(statusTimer.current);
       statusTimer.current = setTimeout(() => setClaudeStatus('idle'), 3000);
-    } else if (/error:|✗/i.test(lines)) {
+    } else if (/error:|Error:|✗|failed|FAILED/i.test(lines)) {
       setClaudeStatus('error');
     }
     // Parse action cards

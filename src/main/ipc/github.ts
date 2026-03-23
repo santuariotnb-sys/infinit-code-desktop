@@ -142,6 +142,17 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
   // ── Clone ──────────────────────────────────────────────────
   ipcMain.handle('github:clone', async (_evt, repo: string, destPath: string) => {
     try {
+      // Validate destPath: must be inside the user's home directory
+      const resolvedDest = path.resolve(destPath);
+      const homeDir = path.resolve(os.homedir());
+      if (!resolvedDest.startsWith(homeDir + path.sep) && resolvedDest !== homeDir) {
+        return { ok: false, error: 'Destino inválido: use uma pasta dentro do seu diretório home.' };
+      }
+      // Reject path traversal sequences
+      if (destPath.includes('..')) {
+        return { ok: false, error: 'Caminho inválido.' };
+      }
+
       const token = await getToken();
       if (token) {
         const userRaw = await httpsGet('https://api.github.com/user', token);
@@ -156,10 +167,10 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
       }
       const cloneUrl = repo.startsWith('http') ? repo : `https://github.com/${repo}.git`;
       return new Promise<{ ok: boolean; path?: string; error?: string }>((resolve) => {
-        const proc = spawn('git', ['clone', cloneUrl, destPath]);
+        const proc = spawn('git', ['clone', cloneUrl, resolvedDest]);
         proc.stdout?.on('data', (d: Buffer) => mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() }));
         proc.stderr?.on('data', (d: Buffer) => mainWindow.webContents.send('github:sync-progress', { msg: d.toString().trim() }));
-        proc.on('close', (code) => code === 0 ? resolve({ ok: true, path: destPath }) : resolve({ ok: false, error: `Exit ${code}` }));
+        proc.on('close', (code) => code === 0 ? resolve({ ok: true, path: resolvedDest }) : resolve({ ok: false, error: `Exit ${code}` }));
       });
     } catch (e) {
       return { ok: false, error: String(e) };
