@@ -15,6 +15,5 @@ export const mainConfig: Configuration = {
   externals: {
     'node-pty': 'commonjs node-pty',
     'keytar': 'commonjs keytar',
-    'electron-store': 'commonjs electron-store',
   },
 };

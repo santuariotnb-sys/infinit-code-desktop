@@ -8,13 +8,31 @@ import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-nati
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import path from 'path';
+import fs from 'fs';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
 
+function copyDirSync(src: string, dest: string) {
+  if (!fs.existsSync(src)) return;
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      unpack: '**/*.node',
+    },
     name: 'Infinit Code',
     executableName: 'infinit-code',
     appBundleId: 'app.infinitcode.desktop',
@@ -22,6 +40,17 @@ const config: ForgeConfig = {
     icon: './assets/icon',
   },
   rebuildConfig: {},
+  hooks: {
+    packageAfterPrune: async (_config, buildPath) => {
+      const natives = ['node-pty', 'keytar'];
+      for (const mod of natives) {
+        const src = path.join(__dirname, 'node_modules', mod);
+        const dest = path.join(buildPath, 'node_modules', mod);
+        console.log(`[hook] Copiando ${mod} → ${dest}`);
+        copyDirSync(src, dest);
+      }
+    },
+  },
   makers: [
     new MakerDMG({
       icon: './assets/icon.icns',
