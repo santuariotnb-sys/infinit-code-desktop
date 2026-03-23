@@ -60,3 +60,81 @@ When spawning subagents (Agent/Task tool), the routing block is automatically in
 | `ctx stats` | Call the `ctx_stats` MCP tool and display the full output verbatim |
 | `ctx doctor` | Call the `ctx_doctor` MCP tool, run the returned shell command, display as checklist |
 | `ctx upgrade` | Call the `ctx_upgrade` MCP tool, run the returned shell command, display as checklist |
+
+---
+
+# Padrões de Código — Infinit Desktop
+
+Estas regras se aplicam a TODO código escrito neste projeto. São obrigatórias.
+
+## 1. Responsabilidade única (SRP)
+
+- Componentes React com >150 linhas DEVEM ser quebrados
+- Cada hook customizado gerencia UM domínio: `useFileManager`, `useTerminal`, `useGitPanel`, `useChatPanel`
+- Nunca misturar lógica de negócio com renderização no mesmo componente
+- `IDE.tsx` é o orquestrador — não contém lógica, apenas composição de hooks e componentes
+
+## 2. IPC Handlers — sempre com tratamento de erro
+
+Todo handler IPC deve seguir este padrão:
+
+```typescript
+// OBRIGATÓRIO em todo ipcMain.handle
+ipcMain.handle('canal:acao', async (_, args) => {
+  try {
+    // lógica aqui
+    return { ok: true, data: resultado }
+  } catch (error) {
+    console.error('[canal:acao]', error)
+    return { ok: false, error: (error as Error).message }
+  }
+})
+```
+
+No renderer, sempre verificar `result.ok` antes de usar `result.data`.
+
+## 3. Async — padrões obrigatórios
+
+```typescript
+// Operações independentes paralelas: Promise.allSettled (nunca Promise.all nu)
+const results = await Promise.allSettled([op1(), op2(), op3()])
+const failed = results.filter(r => r.status === 'rejected')
+
+// NUNCA await em loop sequencial quando pode ser paralelo
+// ❌ for (const f of files) { await processFile(f) }
+// ✅ await Promise.allSettled(files.map(processFile))
+```
+
+## 4. Nomeação
+
+- Booleanos: prefixo `is`, `has`, `can`, `should` → `isLoading`, `hasChanges`, `canSave`
+- Handlers de evento: prefixo `handle` → `handleFileSave`, `handleBranchSwitch`
+- Funções IPC no renderer: prefixo `invoke` → `invokeCloneRepo`, `invokeReadFile`
+- Arrays: sempre plural → `openFiles`, `branches`, `messages`
+
+## 5. Error Boundaries
+
+Todo painel principal do IDE deve ser envolvido em ErrorBoundary:
+`FileTree`, `Terminal`, `Editor`, `IntelliChat`, `GitPanel`, `Preview`
+
+Se um painel crashar, os outros continuam funcionando.
+
+## 6. Separação de camadas
+
+```
+renderer/hooks/     ← lógica de estado e IPC (useFileManager, etc.)
+renderer/components/ ← apenas UI, recebe props, sem chamadas IPC diretas
+renderer/screens/   ← composição de componentes e hooks
+main/ipc/           ← handlers IPC, sem lógica de UI
+main/services/      ← lógica de negócio do processo main
+```
+
+Componentes em `components/` NUNCA chamam `window.api` diretamente.
+Apenas hooks em `hooks/` fazem chamadas IPC.
+
+## 7. KISS — simplicidade primeiro
+
+- Não criar abstração para uso único
+- Não adicionar feature sem ser solicitado
+- Não adicionar prop opcional "para o futuro"
+- Se funciona simples, não complexificar
