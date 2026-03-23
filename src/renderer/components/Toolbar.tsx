@@ -1,5 +1,4 @@
 import React from 'react';
-import VoiceButton from './VoiceButton';
 
 interface ToolbarProps {
   projectPath: string;
@@ -10,84 +9,171 @@ interface ToolbarProps {
   onTogglePreview: () => void;
   onToggleChat: () => void;
   onToggleGit: () => void;
+  onToggleFileTree: () => void;
+  onToggleTerminal: () => void;
+  onRunDev: () => void;
   showPreview: boolean;
   showChat: boolean;
   showGit: boolean;
+  showFileTree: boolean;
+  showTerminal: boolean;
   gitChangeCount: number;
+  gitBranch?: string;
   livePort: number | null;
 }
 
 export default function Toolbar({
   projectPath, fileName, modified, onSave, onOpenFolder,
-  onTogglePreview, onToggleChat, onToggleGit,
-  showPreview, showChat, showGit, gitChangeCount, livePort,
+  onTogglePreview, onToggleChat, onToggleGit, onToggleFileTree, onToggleTerminal, onRunDev,
+  showPreview, showChat, showGit, showFileTree, showTerminal,
+  gitChangeCount, gitBranch = 'main', livePort,
 }: ToolbarProps) {
-  const projectName = projectPath.split('/').pop() || projectPath;
+  const projectName = projectPath ? (projectPath.split('/').pop() || projectPath) : '';
+
+  const pill = (active: boolean, green?: boolean): React.CSSProperties => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+    background: green
+      ? 'rgba(60,176,67,0.12)'
+      : active
+        ? 'rgba(255,255,255,0.75)'
+        : 'rgba(255,255,255,0.52)',
+    border: 'none',
+    borderRadius: 7,
+    padding: '5px 10px',
+    fontSize: 11,
+    color: green ? '#3CB043' : active ? '#1a1c20' : '#72757f',
+    cursor: 'pointer',
+    fontFamily: "'JetBrains Mono', monospace",
+    boxShadow: active
+      ? '0 1px 0 rgba(255,255,255,0.95) inset, 0 4px 12px rgba(0,0,0,0.06)'
+      : '0 1px 0 rgba(255,255,255,0.85) inset, 0 2px 6px rgba(0,0,0,0.07)',
+    transition: 'all .15s',
+    whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
+    // @ts-expect-error electron no-drag
+    WebkitAppRegion: 'no-drag',
+  });
+
+  const sep: React.CSSProperties = { width: 1, height: 20, background: 'rgba(255,255,255,0.55)', margin: '0 2px', flexShrink: 0 };
 
   return (
     <div style={styles.bar}>
-      {/* Left */}
-      <div style={styles.left}>
-        <span style={styles.logo}>∞</span>
-        <span style={styles.project}>{projectName}</span>
-        {fileName && (
-          <>
-            <span style={styles.sep}>/</span>
-            <span style={styles.file}>
-              {fileName}
-              {modified && <span style={styles.dot}>●</span>}
-            </span>
-          </>
-        )}
+      {/* Logo */}
+      <div style={styles.logoBox} onClick={onOpenFolder} title="Abrir pasta">
+        <svg width="16" height="10" viewBox="0 0 24 15" fill="none" style={{ position: 'relative', zIndex: 2 }}>
+          <path d="M8.5 7.5C8.5 7.5 6 2 3 2C1.2 2 .5 3.8 .5 7.5C.5 11.2 1.2 13 3 13C6 13 8.5 7.5 8.5 7.5Z" stroke="#3CB043" strokeWidth="1.6" fill="none" />
+          <path d="M15.5 7.5C15.5 7.5 18 2 21 2C22.8 2 23.5 3.8 23.5 7.5C23.5 11.2 22.8 13 21 13C18 13 15.5 7.5 15.5 7.5Z" stroke="#3CB043" strokeWidth="1.6" fill="none" />
+          <path d="M8.5 7.5H15.5" stroke="#3CB043" strokeWidth="1.6" />
+          <path d="M18.5 4.5L21.5 7L18 10.5" stroke="#3CB043" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+        </svg>
       </div>
 
-      {/* Center — live badge */}
-      {livePort && (
-        <div style={styles.liveBadge}>
-          <span style={styles.liveDot} />
-          <span style={styles.liveText}>LIVE</span>
-          <span style={styles.livePort}>:{livePort}</span>
+      {/* Project path */}
+      {projectName && (
+        <div style={styles.projectPath}>
+          <span style={{ color: '#72757f' }}>~/</span>
+          <span style={styles.projectName}>{projectName}</span>
+          {fileName && (
+            <>
+              <span style={{ color: '#c8cad4' }}> / </span>
+              <span style={{ color: '#3a3d45', fontWeight: 400 }}>{fileName}</span>
+              {modified && <span style={styles.modDot}>●</span>}
+            </>
+          )}
         </div>
       )}
 
-      {/* Right */}
-      <div style={styles.right}>
-        {modified && (
-          <button style={styles.saveBtn} onClick={onSave} title="Salvar (Cmd+S)">Salvar</button>
+      <div style={sep} />
+
+      {/* Panel toggles */}
+      <button style={pill(showFileTree)} onClick={onToggleFileTree} title="Cmd+B">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 2h9M1 5.5h6M1 9h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+        Arquivos
+      </button>
+
+      <button style={pill(showChat)} onClick={onToggleChat} title="Cmd+J">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 1.5h8v6.5H5l-3 2v-2H1.5z" stroke="currentColor" strokeWidth="1.1" fill="none" strokeLinejoin="round" /></svg>
+        Chat
+      </button>
+
+      <button style={pill(showPreview)} onClick={onTogglePreview} title="Preview">
+        {livePort ? (
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3CB043', animation: 'tbPulse 2s infinite', flexShrink: 0 }} />
+        ) : (
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><rect x="1" y="2" width="9" height="7" rx="1" stroke="currentColor" strokeWidth="1.1" fill="none" /></svg>
         )}
+        Preview{livePort ? ` :${livePort}` : ''}
+      </button>
 
-        <button style={styles.iconBtn} onClick={onOpenFolder} title="Abrir pasta">📁</button>
+      <button style={pill(showTerminal)} onClick={onToggleTerminal} title="Cmd+`">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 3l3 2.5-3 2.5M5.5 8h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+        Terminal
+      </button>
 
+      <div style={sep} />
+
+      <button style={pill(false, true)} onClick={onRunDev} title="npm run dev">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 1.5L8.5 5 2 8.5z" fill="#3CB043" /></svg>
+        npm run dev
+      </button>
+
+      <div style={{ flex: 1 }} />
+
+      {/* Save indicator */}
+      {modified && (
         <button
-          style={{ ...styles.iconBtn, ...(showPreview ? styles.active : {}) }}
-          onClick={onTogglePreview}
-          title="Preview"
+          style={{ ...pill(true), background: '#3CB043', color: 'white', boxShadow: '0 2px 10px rgba(60,176,67,0.25)' }}
+          onClick={onSave}
+          title="Salvar (Cmd+S)"
         >
-          👁
+          Salvar
         </button>
+      )}
 
-        {/* Git button with badge */}
-        <button
-          style={{ ...styles.iconBtn, ...(showGit ? styles.active : {}), position: 'relative' }}
-          onClick={onToggleGit}
-          title="Git Panel"
-        >
-          ⑂
-          {gitChangeCount > 0 && (
-            <span style={styles.badge}>{gitChangeCount}</span>
-          )}
-        </button>
-
-        <button
-          style={{ ...styles.iconBtn, ...(showChat ? styles.active : {}) }}
-          onClick={onToggleChat}
-          title="IntelliChat (Cmd+J)"
-        >
-          ∞
-        </button>
-
-        <VoiceButton />
+      {/* Git badge */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '4px 10px', borderRadius: 7,
+          background: 'rgba(255,255,255,0.52)',
+          boxShadow: '0 1px 0 rgba(255,255,255,0.85) inset, 0 2px 6px rgba(0,0,0,0.07)',
+          fontSize: 11, color: '#72757f', fontFamily: "'JetBrains Mono', monospace",
+          flexShrink: 0, cursor: 'pointer', transition: 'all .15s',
+          // @ts-expect-error electron no-drag
+          WebkitAppRegion: 'no-drag',
+        }}
+        onClick={onToggleGit}
+        title="GitHub Panel"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="#72757f">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+        </svg>
+        <span style={{ color: '#3a3d45' }}>{gitBranch}</span>
+        {gitChangeCount > 0 && (
+          <span style={{ color: '#3CB043', fontSize: 10 }}>●{gitChangeCount}</span>
+        )}
       </div>
+
+      {/* Voice */}
+      <button style={pill(false)} title="Voz PT-BR">
+        <svg width="11" height="13" viewBox="0 0 11 13" fill="none"><rect x="3" y=".5" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.1" /><path d="M1 6.5C1 9 2.8 11 5.5 11s4.5-2 4.5-4.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" /><path d="M5.5 11v1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /></svg>
+        Voz
+      </button>
+
+      {/* ⌘K */}
+      <button style={pill(false)} title="Command Palette">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.1" /><path d="M7.5 7.5l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+        ⌘K
+      </button>
+
+      <style>{`
+        @keyframes tbPulse {
+          0%,100%{opacity:.4;transform:scale(1)}
+          50%{opacity:1;transform:scale(1.3)}
+        }
+      `}</style>
     </div>
   );
 }
@@ -96,47 +182,52 @@ const styles: Record<string, React.CSSProperties> = {
   bar: {
     display: 'flex',
     alignItems: 'center',
-    height: 40,
+    height: 44,
     padding: '0 14px',
-    background: '#111',
-    borderBottom: '1px solid #1e1e1e',
+    background: 'rgba(220,223,229,0.85)',
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
+    borderBottom: '1px solid rgba(255,255,255,0.55)',
     flexShrink: 0,
-    gap: 8,
+    gap: 6,
     // @ts-expect-error electron drag
     WebkitAppRegion: 'drag',
+    fontFamily: "'DM Sans', -apple-system, sans-serif",
   },
-  left: {
-    display: 'flex', alignItems: 'center', gap: 6, flex: 1,
-    // @ts-expect-error electron drag
+  logoBox: {
+    width: 26,
+    height: 26,
+    background: 'rgba(255,255,255,0.72)',
+    borderRadius: 7,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 1px 0 rgba(255,255,255,0.88) inset, 0 3px 8px rgba(0,0,0,0.12)',
+    position: 'relative',
+    overflow: 'hidden',
+    flexShrink: 0,
+    cursor: 'pointer',
+    // @ts-expect-error electron no-drag
     WebkitAppRegion: 'no-drag',
   },
-  logo: { color: '#00ff88', fontSize: 18, fontWeight: 300 },
-  project: { color: '#666', fontSize: 12, fontWeight: 500 },
-  sep: { color: '#2a2a2a', fontSize: 12 },
-  file: { color: '#ddd', fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 },
-  dot: { color: '#ffaa00', fontSize: 10 },
-  liveBadge: {
-    display: 'flex', alignItems: 'center', gap: 4,
-    background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.15)',
-    borderRadius: 4, padding: '2px 8px', flexShrink: 0,
-    // @ts-expect-error electron drag
+  projectPath: {
+    fontSize: 12,
+    color: '#72757f',
+    fontFamily: "'JetBrains Mono', monospace",
+    display: 'flex',
+    alignItems: 'center',
+    gap: 0,
+    flexShrink: 0,
+    // @ts-expect-error electron no-drag
     WebkitAppRegion: 'no-drag',
   },
-  liveDot: { width: 5, height: 5, borderRadius: '50%', background: '#00ff88', animation: 'pulse 2s infinite' },
-  liveText: { color: '#00ff88', fontSize: 10, fontWeight: 700, letterSpacing: '0.05em' },
-  livePort: { color: '#555', fontSize: 10, fontFamily: 'monospace' },
-  right: {
-    display: 'flex', alignItems: 'center', gap: 2,
-    // @ts-expect-error electron drag
-    WebkitAppRegion: 'no-drag',
+  projectName: {
+    color: '#3a3d45',
+    fontWeight: 400,
   },
-  saveBtn: { background: '#00ff88', color: '#0a0a0a', border: 'none', padding: '3px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer', marginRight: 6 },
-  iconBtn: { background: 'transparent', border: 'none', color: '#666', fontSize: 14, padding: '5px 7px', borderRadius: 4, cursor: 'pointer' },
-  active: { background: 'rgba(0,255,136,0.12)', color: '#00ff88' },
-  badge: {
-    position: 'absolute', top: 2, right: 2,
-    background: '#00ff88', color: '#0a0a0a',
-    borderRadius: '50%', fontSize: 8, fontWeight: 700,
-    width: 12, height: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  modDot: {
+    color: '#3CB043',
+    fontSize: 10,
+    marginLeft: 4,
   },
 };

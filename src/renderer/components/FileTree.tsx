@@ -13,24 +13,24 @@ interface FileTreeProps {
   onSelectFile: (path: string) => void;
 }
 
-function getFileIcon(name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() || '';
-  const icons: Record<string, string> = {
-    ts: '⬡', tsx: '⬡', js: '◇', jsx: '◇',
-    json: '{ }', css: '#', scss: '#', html: '<>',
-    md: '¶', py: '◈', rs: '⚙', go: '◉',
-    sql: '◫', yaml: '≡', yml: '≡',
-    png: '◻', jpg: '◻', svg: '◻', gif: '◻',
-    lock: '🔒',
-  };
-  return icons[ext] || '◦';
+function FolderIcon() {
+  return (
+    <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
+      <path d="M.5 2A1.5 1.5 0 0 1 2 .5h2.5L6 2H10A1.5 1.5 0 0 1 11.5 3.5v5A1.5 1.5 0 0 1 10 10H2A1.5 1.5 0 0 1 .5 8.5V2Z" stroke="currentColor" strokeWidth=".9" fill="none" />
+    </svg>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg width="8" height="10" viewBox="0 0 8 10" fill="none">
+      <path d="M1 1h4l2 2v6H1z" stroke="currentColor" strokeWidth=".85" fill="none" />
+    </svg>
+  );
 }
 
 function TreeNode({
-  node,
-  depth,
-  selectedFile,
-  onSelectFile,
+  node, depth, selectedFile, onSelectFile,
 }: {
   node: FileNode;
   depth: number;
@@ -43,25 +43,22 @@ function TreeNode({
     return (
       <div>
         <div
-          style={{
-            ...styles.item,
-            paddingLeft: `${12 + depth * 16}px`,
-          }}
+          style={{ ...styles.item, paddingLeft: `${12 + depth * 16}px` }}
           onClick={() => setExpanded(!expanded)}
         >
-          <span style={styles.folderIcon}>{expanded ? '▾' : '▸'}</span>
+          <span style={styles.chevron}>{expanded ? '▾' : '▸'}</span>
+          <FolderIcon />
           <span style={styles.folderName}>{node.name}</span>
         </div>
-        {expanded &&
-          node.children?.map((child) => (
-            <TreeNode
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              selectedFile={selectedFile}
-              onSelectFile={onSelectFile}
-            />
-          ))}
+        {expanded && node.children?.map((child) => (
+          <TreeNode
+            key={child.path}
+            node={child}
+            depth={depth + 1}
+            selectedFile={selectedFile}
+            onSelectFile={onSelectFile}
+          />
+        ))}
       </div>
     );
   }
@@ -72,13 +69,14 @@ function TreeNode({
     <div
       style={{
         ...styles.item,
-        paddingLeft: `${28 + depth * 16}px`,
-        background: isSelected ? 'rgba(0, 255, 136, 0.08)' : 'transparent',
-        color: isSelected ? '#00ff88' : '#ccc',
+        paddingLeft: `${24 + depth * 16}px`,
+        background: isSelected ? 'rgba(255,255,255,0.5)' : 'transparent',
+        color: isSelected ? '#1a1c20' : '#72757f',
+        boxShadow: isSelected ? 'inset 2px 0 0 rgba(255,255,255,0.7)' : 'none',
       }}
       onClick={() => onSelectFile(node.path)}
     >
-      <span style={styles.fileIcon}>{getFileIcon(node.name)}</span>
+      <FileIcon />
       <span style={styles.fileName}>{node.name}</span>
     </div>
   );
@@ -88,7 +86,15 @@ export default function FileTree({ files, selectedFile, onSelectFile }: FileTree
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <span style={styles.headerText}>EXPLORER</span>
+        <span style={styles.headerText}>Explorador</span>
+        <div style={styles.actions}>
+          <button style={styles.action} title="Novo arquivo">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v9M1 5.5h9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
+          </button>
+          <button style={styles.action} title="Nova pasta">
+            <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M.5 2C.5 1.2 1.2.5 2 .5h2.5L6 2H10c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5H2C1.2 9.5.5 8.8.5 8V2z" stroke="currentColor" strokeWidth="1.1" fill="none" /></svg>
+          </button>
+        </div>
       </div>
       <div style={styles.tree}>
         {files.map((file) => (
@@ -115,54 +121,78 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
   },
   header: {
-    padding: '12px 16px 8px',
-    borderBottom: '1px solid #2a2a2a',
+    height: 36,
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0 14px',
+    borderBottom: '1px solid rgba(255,255,255,0.4)',
+    flexShrink: 0,
+    justifyContent: 'space-between',
   },
   headerText: {
-    fontSize: '11px',
-    fontWeight: 600,
-    color: '#666',
-    letterSpacing: '1px',
+    fontSize: 10,
+    letterSpacing: '.1em',
+    textTransform: 'uppercase' as const,
+    color: '#a8aab4',
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  actions: {
+    display: 'flex',
+    gap: 4,
+  },
+  action: {
+    width: 20,
+    height: 20,
+    background: 'transparent',
+    border: 'none',
+    borderRadius: 4,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    color: '#c8cad4',
   },
   tree: {
     flex: 1,
-    overflow: 'auto',
-    paddingTop: '4px',
+    overflowY: 'auto' as const,
+    padding: '6px 0',
   },
   item: {
     display: 'flex',
     alignItems: 'center',
-    gap: '6px',
-    padding: '4px 12px',
+    gap: 7,
+    padding: '4px 14px',
     cursor: 'pointer',
-    fontSize: '13px',
+    fontSize: 12,
+    fontFamily: "'JetBrains Mono', monospace",
     userSelect: 'none' as const,
     whiteSpace: 'nowrap' as const,
+    transition: 'all .12s',
+    color: '#72757f',
   },
-  folderIcon: {
-    color: '#666',
-    fontSize: '10px',
-    width: '12px',
+  chevron: {
+    color: '#a8aab4',
+    fontSize: 10,
+    width: 10,
     textAlign: 'center' as const,
+    flexShrink: 0,
   },
   folderName: {
-    color: '#ddd',
-    fontWeight: 500,
-  },
-  fileIcon: {
-    fontSize: '10px',
-    color: '#666',
-    width: '16px',
-    textAlign: 'center' as const,
+    color: '#3a3d45',
+    fontWeight: 400,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
   fileName: {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
+    flex: 1,
   },
   empty: {
-    color: '#555',
-    fontSize: '12px',
-    padding: '16px',
+    color: '#a8aab4',
+    fontSize: 12,
+    padding: 16,
     textAlign: 'center' as const,
+    fontFamily: "'JetBrains Mono', monospace",
   },
 };
