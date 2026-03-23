@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" rx="200" ry="200" fill="#0a0a0a"/>
+  <!-- ∞ symbol built from two circles/lemniscate path -->
+  <path d="M512 512
+    m-160 0
+    c0-80 60-140 120-140
+    c40 0 70 20 90 50
+    c20-30 50-50 90-50
+    c60 0 120 60 120 140
+    c0 80-60 140-120 140
+    c-40 0-70-20-90-50
+    c-20 30-50 50-90 50
+    c-60 0-120-60-120-140z"
+    fill="none" stroke="#00ff88" stroke-width="52" stroke-linecap="round"/>
+  <!-- Simplified lemniscate with bezier curves -->
+  <path d="M362 512
+    C362 432 402 372 462 372
+    C502 372 532 400 552 432
+    C572 400 602 372 642 372
+    C702 372 742 432 742 512
+    C742 592 702 652 642 652
+    C602 652 572 624 552 592
+    C532 624 502 652 462 652
+    C402 652 362 592 362 512Z"
+    fill="#00ff88" opacity="0.15"/>
+  <path d="M362 512
+    C362 432 402 372 462 372
+    C502 372 532 400 552 432
+    C572 400 602 372 642 372
+    C702 372 742 432 742 512
+    C742 592 702 652 642 652
+    C602 652 572 624 552 592
+    C532 624 502 652 462 652
+    C402 652 362 592 362 512Z"
+    fill="none" stroke="#00ff88" stroke-width="28" stroke-linejoin="round"/>
+</svg>

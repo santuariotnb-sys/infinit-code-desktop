@@ -1,5 +1,5 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
-import { app, BrowserWindow, session, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, session, shell, ipcMain, Menu } from 'electron';
 import path from 'path';
 import { registerTerminalHandlers } from './ipc/terminal';
 import { registerFileHandlers } from './ipc/files';
@@ -110,7 +110,75 @@ function createWindow(): void {
   }
 }
 
-app.on('ready', createWindow);
+function buildMenu(): void {
+  const isMac = process.platform === 'darwin';
+  const template: Electron.MenuItemConstructorOptions[] = isMac
+    ? [
+        {
+          label: app.name,
+          submenu: [
+            { role: 'about' },
+            { type: 'separator' },
+            { role: 'services' },
+            { type: 'separator' },
+            { role: 'hide' },
+            { role: 'hideOthers' },
+            { role: 'unhide' },
+            { type: 'separator' },
+            { role: 'quit' },
+          ],
+        },
+        {
+          label: 'Edit',
+          submenu: [
+            { role: 'undo' },
+            { role: 'redo' },
+            { type: 'separator' },
+            { role: 'cut' },
+            { role: 'copy' },
+            { role: 'paste' },
+            { role: 'selectAll' },
+          ],
+        },
+      ]
+    : [
+        {
+          label: 'File',
+          submenu: [
+            {
+              label: 'Open Folder',
+              click: () => mainWindow?.webContents.send('menu:open-folder'),
+            },
+            { type: 'separator' },
+            { role: 'quit' },
+          ],
+        },
+        {
+          label: 'Edit',
+          submenu: [
+            { role: 'undo' },
+            { role: 'redo' },
+            { type: 'separator' },
+            { role: 'cut' },
+            { role: 'copy' },
+            { role: 'paste' },
+            { role: 'selectAll' },
+          ],
+        },
+        {
+          label: 'Help',
+          submenu: [
+            { role: 'about' },
+          ],
+        },
+      ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+app.on('ready', () => {
+  buildMenu();
+  createWindow();
+});
 
 app.on('second-instance', () => {
   if (mainWindow) {

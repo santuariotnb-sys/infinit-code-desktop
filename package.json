@@ -11,7 +11,12 @@
     "make": "electron-forge make",
     "build": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "eslint --ext .ts,.tsx ."
+    "lint": "eslint --ext .ts,.tsx .",
+    "icons": "node scripts/make-icons.js",
+    "build:mac": "electron-forge make --platform darwin",
+    "build:win": "electron-forge make --platform win32",
+    "build:linux": "electron-forge make --platform linux",
+    "build:all": "npm run build:mac && npm run build:win && npm run build:linux"
   },
   "keywords": [
     "electron",
@@ -47,6 +52,7 @@
     "eslint-plugin-import": "^2.32.0",
     "fork-ts-checker-webpack-plugin": "^7.3.0",
     "node-loader": "^2.1.0",
+    "sharp": "^0.34.5",
     "style-loader": "^3.3.4",
     "ts-loader": "^9.5.4",
     "typescript": "~5.4.0"
@@ -63,6 +69,7 @@
     "node-pty": "^1.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "semver": "^7.7.4",
     "update-electron-app": "^3.1.2"
   }
 }
