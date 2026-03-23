@@ -27,9 +27,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate icons
-        run: node scripts/make-icons.js
-
       - name: Build for macOS
         run: npm run build:mac
         env:
@@ -58,9 +55,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate icons
-        run: node scripts/make-icons.js
-
       - name: Build for Windows
         run: npm run build:win
         env:
@@ -84,9 +78,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Generate icons
-        run: node scripts/make-icons.js
 
       - name: Build for Linux
         run: npm run build:linux
