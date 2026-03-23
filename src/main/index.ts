@@ -1,0 +1,115 @@
+import { app, BrowserWindow, session, shell, ipcMain } from 'electron';
+import path from 'path';
+import { registerTerminalHandlers } from './ipc/terminal';
+import { registerFileHandlers } from './ipc/files';
+import { registerClaudeHandlers } from './ipc/claude';
+import { registerGithubHandlers } from './ipc/github';
+import { registerLicenseHandlers } from './ipc/license';
+import { runAutoSetup } from './services/auto-setup';
+import { initUpdater } from './services/updater';
+
+declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
+declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
+
+if (require('electron-squirrel-startup')) {
+  app.quit();
+}
+
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
+let mainWindow: BrowserWindow | null = null;
+
+function createWindow(): void {
+  const isMac = process.platform === 'darwin';
+
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 900,
+    minHeight: 600,
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    backgroundColor: '#0a0a0a',
+    show: false,
+    webPreferences: {
+      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  // CSP
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+          "connect-src 'self' https://api.anthropic.com https://*.supabase.co https://app-infinitcode.netlify.app ws://localhost:* http://localhost:*; " +
+          "frame-src 'self' http://localhost:*; " +
+          "img-src 'self' data: https:;"
+        ],
+      },
+    });
+  });
+
+  // Register IPC handlers
+  registerTerminalHandlers(mainWindow);
+  registerFileHandlers(mainWindow);
+  registerClaudeHandlers(mainWindow);
+  registerGithubHandlers();
+  registerLicenseHandlers(mainWindow);
+
+  // Shell open external
+  ipcMain.handle('shell:open', async (_event, url: string) => {
+    const parsed = new URL(url);
+    if (['https:', 'http:'].includes(parsed.protocol)) {
+      await shell.openExternal(url);
+    }
+  });
+
+  // Auto setup
+  runAutoSetup(mainWindow);
+
+  // Auto updater
+  initUpdater(mainWindow);
+
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
+}
+
+app.on('ready', createWindow);
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});

@@ -1,0 +1,52 @@
+appId: app.infinitcode.desktop
+productName: Infinit Code
+copyright: Copyright © 2026 Infinit Code
+
+directories:
+  output: dist
+
+files:
+  - .webpack/**/*
+
+mac:
+  category: public.app-category.developer-tools
+  icon: assets/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+
+win:
+  icon: assets/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+linux:
+  icon: assets/icon.png
+  target:
+    - target: AppImage
+      arch:
+        - x64
+
+publish:
+  provider: github
+  owner: santuariotnb-sys
+  repo: infinit-code-desktop
+  releaseType: release
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Infinit Code
+
+dmg:
+  artifactName: "Infinit-Code-${version}-${arch}.dmg"
