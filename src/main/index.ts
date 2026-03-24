@@ -73,22 +73,37 @@ function createWindow(): void {
     return { action: 'deny' };
   });
 
-  // CSP
+  // Remove X-Frame-Options e frame-ancestors de respostas localhost
+  // para permitir que o preview do dev server apareça no iframe
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdn.jsdelivr.net; " +
-          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-          "font-src 'self' data: https://fonts.gstatic.com; " +
-          "connect-src 'self' https://api.anthropic.com https://*.supabase.co https://app-infinitcode.netlify.app ws://localhost:* http://localhost:*; " +
-          "frame-src 'self' http://localhost:*; " +
-          "img-src 'self' data: https:;"
-        ],
-      },
-    });
+    const headers = { ...details.responseHeaders };
+
+    // Strip headers que bloqueiam iframe (Next.js, Vite, etc. enviam esses)
+    delete headers['x-frame-options'];
+    delete headers['X-Frame-Options'];
+
+    // Remove frame-ancestors do CSP do servidor de dev
+    if (details.url.startsWith('http://localhost') || details.url.startsWith('http://127.0.0.1')) {
+      const cspKey = Object.keys(headers).find((k) => k.toLowerCase() === 'content-security-policy');
+      if (cspKey) {
+        headers[cspKey] = (headers[cspKey] as string[]).map((v) =>
+          v.replace(/frame-ancestors[^;]*(;|$)/gi, '').trim()
+        );
+      }
+    } else {
+      // CSP do próprio app Electron
+      headers['Content-Security-Policy'] = [
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdn.jsdelivr.net; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' data: https://fonts.gstatic.com; " +
+        "connect-src 'self' https://api.anthropic.com https://*.supabase.co https://app-infinitcode.netlify.app ws://localhost:* http://localhost:*; " +
+        "frame-src 'self' http://localhost:* http://127.0.0.1:*; " +
+        "img-src 'self' data: https:;"
+      ];
+    }
+
+    callback({ responseHeaders: headers });
   });
 
   // Register IPC handlers only once (guard against window re-creation on activate)

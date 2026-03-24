@@ -5,6 +5,7 @@ import Editor from '../components/Editor';
 import Terminal from '../components/Terminal';
 import Preview from '../components/Preview';
 import IntelliChat from '../components/IntelliChat';
+import AgentPanel from '../components/AgentPanel';
 import Toolbar from '../components/Toolbar';
 import GitPanel from '../components/GitPanel';
 
@@ -29,6 +30,8 @@ export default function IDE() {
 
   // Track Claude streaming status for toolbar indicator
   const [isChatStreaming, setIsChatStreaming] = useState(false);
+  type ChatTab = 'chat' | 'research' | 'agents';
+  const [chatTab, setChatTab] = useState<ChatTab>('chat');
 
   useKeyboardShortcuts({
     onSave: fileManager.handleSave,
@@ -45,7 +48,7 @@ export default function IDE() {
 
   const TERMINAL_HEIGHT = terminal.isExpanded ? 220 : 34;
   const SIDEBAR_WIDTH = panels.showFileTree ? 200 : 0;
-  const PREVIEW_WIDTH = panels.showPreview ? '45%' : '0';
+  const PREVIEW_WIDTH = panels.showPreview ? 420 : 0;
   const CHAT_WIDTH = 300;
 
   const fileName = fileManager.openFile
@@ -204,19 +207,65 @@ export default function IDE() {
         )}
 
         {panels.showChat && (
-          <div style={{ ...styles.panel, width: CHAT_WIDTH }}>
-            <ErrorBoundary name="IntelliChat">
-              <IntelliChat
-                projectPath={fileManager.projectPath}
-                activeFile={fileManager.openFile
-                  ? { path: fileManager.openFile, content: fileManager.fileContent }
-                  : null}
-                onTerminalInject={terminal.writeToTerminal}
-                terminalOutput={terminal.terminalOutput}
-                onOpenFile={fileManager.handleSelectFile}
-                onStreamingChange={setIsChatStreaming}
-              />
-            </ErrorBoundary>
+          <div style={{ ...styles.panel, width: CHAT_WIDTH, display: 'flex', flexDirection: 'column' }}>
+            {/* Tab bar */}
+            <div style={styles.chatTabs}>
+              {([
+                { id: 'chat',     icon: '⬡', label: 'Projeto' },
+                { id: 'research', icon: '⌕', label: 'Pesquisa' },
+                { id: 'agents',   icon: '🤖', label: 'Agentes' },
+              ] as { id: ChatTab; icon: string; label: string }[]).map((tab) => (
+                <button
+                  key={tab.id}
+                  style={{ ...styles.chatTab, ...(chatTab === tab.id ? styles.chatTabActive : {}) }}
+                  onClick={() => setChatTab(tab.id)}
+                >
+                  <span style={{ fontSize: 11 }}>{tab.icon}</span>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              {chatTab === 'chat' && (
+                <ErrorBoundary name="IntelliChat">
+                  <IntelliChat
+                    mode="project"
+                    projectPath={fileManager.projectPath}
+                    activeFile={fileManager.openFile
+                      ? { path: fileManager.openFile, content: fileManager.fileContent }
+                      : null}
+                    onTerminalInject={terminal.writeToTerminal}
+                    terminalOutput={terminal.terminalOutput}
+                    onOpenFile={fileManager.handleSelectFile}
+                    onStreamingChange={setIsChatStreaming}
+                  />
+                </ErrorBoundary>
+              )}
+              {chatTab === 'research' && (
+                <ErrorBoundary name="IntelliChat-research">
+                  <IntelliChat
+                    mode="research"
+                    projectPath={fileManager.projectPath}
+                    activeFile={null}
+                    onTerminalInject={terminal.writeToTerminal}
+                    terminalOutput=""
+                    onOpenFile={fileManager.handleSelectFile}
+                    onStreamingChange={setIsChatStreaming}
+                  />
+                </ErrorBoundary>
+              )}
+              {chatTab === 'agents' && (
+                <ErrorBoundary name="AgentPanel">
+                  <AgentPanel
+                    projectPath={fileManager.projectPath}
+                    activeFile={fileManager.openFile ?? undefined}
+                    activeFileContent={fileManager.openFile ? fileManager.fileContent : undefined}
+                  />
+                </ErrorBoundary>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -333,6 +382,29 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(255,255,255,0.55)', border: 'none', borderRadius: 8,
     padding: '10px 14px', cursor: 'pointer', color: '#3a3d45', fontSize: 12,
     textAlign: 'left' as const, fontFamily: "'JetBrains Mono', monospace", width: '100%',
+  },
+
+  // Chat tabs
+  chatTabs: {
+    display: 'flex', flexShrink: 0,
+    background: 'rgba(215,218,224,0.9)',
+    borderBottom: '1px solid rgba(255,255,255,0.45)',
+    padding: '6px 8px 0',
+    gap: 2,
+  },
+  chatTab: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    background: 'transparent', border: 'none',
+    borderRadius: '7px 7px 0 0', padding: '5px 10px',
+    fontSize: 11, fontFamily: "'DM Sans', -apple-system, sans-serif",
+    color: '#a8aab4', cursor: 'pointer',
+    fontWeight: 400,
+  },
+  chatTabActive: {
+    background: 'rgba(255,255,255,0.75)',
+    color: '#2a2d35',
+    fontWeight: 500,
+    boxShadow: '0 1px 0 rgba(255,255,255,0.95) inset',
   },
 
   // Status bar

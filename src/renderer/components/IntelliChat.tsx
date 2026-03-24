@@ -10,6 +10,7 @@ import ChatInput from './IntelliChat/ChatInput';
 import ChatEmptyState from './IntelliChat/ChatEmptyState';
 
 export interface IntelliChatProps {
+  mode?: 'project' | 'research';
   projectPath: string | null;
   activeFile: { path: string; content: string } | null;
   onTerminalInject: (text: string) => void;
@@ -18,7 +19,7 @@ export interface IntelliChatProps {
   onStreamingChange?: (isStreaming: boolean) => void;
 }
 
-export default function IntelliChat({ projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile, onStreamingChange }: IntelliChatProps) {
+export default function IntelliChat({ mode = 'project', projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile, onStreamingChange }: IntelliChatProps) {
   const [input, setInput] = useState('');
   const [actionCards, setActionCards] = useState<ActionCard[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -52,11 +53,12 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
       return;
     }
 
+    const isResearch = mode === 'research';
     const ctx: ChatContext = {
       cwd: projectPath ?? (typeof process !== 'undefined' ? process.env.HOME ?? '~' : '~'),
-      activeFile: activeFile?.path,
-      activeFileContent: activeFile?.content,
-      terminalOutput: terminalOutput.split('\n').slice(-30).join('\n'),
+      activeFile: isResearch ? undefined : activeFile?.path,
+      activeFileContent: isResearch ? undefined : activeFile?.content,
+      terminalOutput: isResearch ? '' : terminalOutput.split('\n').slice(-30).join('\n'),
       history: chat.messages.filter((m) => m.role !== 'system').slice(-6).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     };
 
@@ -121,7 +123,7 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
       {/* Header */}
       <div style={styles.header}>
         <span style={styles.headerIcon}>∞</span>
-        <span style={styles.headerTitle}>IntelliChat</span>
+        <span style={styles.headerTitle}>{mode === 'research' ? 'Pesquisa' : 'IntelliChat'}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: chat.claudeStatus === 'ready' ? '#3CB043' : chat.claudeStatus === 'thinking' ? '#f0a020' : chat.claudeStatus === 'offline' ? '#d93030' : '#a8aab4', flexShrink: 0 }} />
           <span style={{ fontSize: 10, color: '#555', fontFamily: 'monospace' }}>
@@ -165,7 +167,8 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
       {input && (
         <div style={styles.tokenBar}>
           {(() => {
-            const ctx: ChatContext = { cwd: projectPath ?? '~', activeFile: activeFile?.path, activeFileContent: activeFile?.content, terminalOutput: terminalOutput.split('\n').slice(-10).join('\n'), history: chat.messages.filter(m => m.role !== 'system').slice(-4).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) };
+            const isRes = mode === 'research';
+            const ctx: ChatContext = { cwd: projectPath ?? '~', activeFile: isRes ? undefined : activeFile?.path, activeFileContent: isRes ? undefined : activeFile?.content, terminalOutput: isRes ? '' : terminalOutput.split('\n').slice(-10).join('\n'), history: chat.messages.filter(m => m.role !== 'system').slice(-4).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) };
             const tokens = estimateTokens(buildPrompt(input, ctx));
             const color = tokenColor(tokens);
             return (

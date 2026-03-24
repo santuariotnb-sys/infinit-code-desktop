@@ -204,7 +204,6 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
           key={iframeKey}
           src={`http://localhost:${port}`}
           style={{ ...styles.iframe, width: VIEWPORT[viewport], maxWidth: '100%' }}
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
           title="Preview"
           onLoad={handleLoad}
           onError={() => { setStatus('error'); setServerError(true); }}
