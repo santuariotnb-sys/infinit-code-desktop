@@ -1,6 +1,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 import { app, BrowserWindow, session, shell, ipcMain, Menu } from 'electron';
 import path from 'path';
+import { execSync } from 'child_process';
 import { registerTerminalHandlers } from './ipc/terminal';
 import { registerFileHandlers } from './ipc/files';
 import { registerClaudeHandlers } from './ipc/claude';
@@ -15,6 +16,15 @@ declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
 if (require('electron-squirrel-startup')) {
   app.quit();
+}
+
+// Remove macOS Gatekeeper quarantine no primeiro launch
+// Sem isso: "app está danificado" a cada abertura em apps não assinados
+if (process.platform === 'darwin' && app.isPackaged) {
+  try {
+    const appBundle = path.dirname(path.dirname(path.dirname(path.dirname(app.getPath('exe')))));
+    execSync(`xattr -rd com.apple.quarantine "${appBundle}"`, { timeout: 5000, stdio: 'ignore' });
+  } catch { /* já limpo ou sem quarentena */ }
 }
 
 const gotTheLock = app.requestSingleInstanceLock();

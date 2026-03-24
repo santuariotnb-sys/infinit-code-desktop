@@ -55,6 +55,12 @@ const config: ForgeConfig = {
     new MakerDMG({
       icon: './assets/icon.icns',
       format: 'ULFO',
+      overwrite: true,
+      contents: (opts) => [
+        { x: 170, y: 180, type: 'file', path: opts.appPath },
+        { x: 380, y: 180, type: 'link', path: '/Applications' },
+      ],
+      window: { size: { width: 540, height: 360 } },
     }, ['darwin']),
     new MakerZIP({}, ['darwin']),
     new MakerSquirrel({
