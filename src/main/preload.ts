@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld('api', {
     clone: (repo: string, dest: string) => ipcRenderer.invoke('github:clone', repo, dest),
     listRepos: () => ipcRenderer.invoke('github:list-repos'),
     gitStatus: (cwd: string) => ipcRenderer.invoke('github:git-status', cwd),
+    commit: (cwd: string, message: string) => ipcRenderer.invoke('github:commit', cwd, message),
     sync: (cwd: string, branch: string) => ipcRenderer.invoke('github:sync', cwd, branch),
     pull: (cwd: string, branch: string) => ipcRenderer.invoke('github:pull', cwd, branch),
     push: (cwd: string, branch: string) => ipcRenderer.invoke('github:push', cwd, branch),

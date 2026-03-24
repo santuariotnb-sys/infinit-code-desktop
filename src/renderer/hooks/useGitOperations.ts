@@ -22,7 +22,7 @@ export function useGitOperations({
   useEffect(() => {
     window.api.github.authStatus().then((s) => {
       setConnected(s.connected);
-      if (s.username) setUsername(s.username);
+      if (s.user) setUsername(s.user);
     });
   }, []);
 
@@ -37,22 +37,6 @@ export function useGitOperations({
     });
     return cleanup;
   }, [onProgress]);
-
-  async function handleConnect() {
-    setLoading(true);
-    const result = await window.api.github.connectOAuth();
-    setLoading(false);
-    if (result.connected) {
-      setConnected(true);
-      setUsername(result.username || '');
-    }
-  }
-
-  async function handleDisconnect() {
-    await window.api.github.disconnect();
-    setConnected(false);
-    setUsername('');
-  }
 
   async function handlePull() {
     if (!projectPath || !branch) return;
@@ -83,9 +67,13 @@ export function useGitOperations({
   async function handleCommit(commitMsg: string, onClear: () => void) {
     if (!projectPath || !commitMsg.trim()) return;
     setLoading(true);
-    await window.api.github.sync(projectPath, branch);
-    onClear();
-    await onRefresh?.();
+    const result = await window.api.github.commit?.(projectPath, commitMsg.trim());
+    if (result?.ok) {
+      onClear();
+      await onRefresh?.();
+    } else {
+      setSyncLog(`Erro: ${result?.error || 'falha no commit'}`);
+    }
     setLoading(false);
   }
 
@@ -110,8 +98,6 @@ export function useGitOperations({
     syncLog,
     connected,
     username,
-    handleConnect,
-    handleDisconnect,
     handlePull,
     handlePush,
     handleSync,

@@ -294,6 +294,17 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
     }
   });
 
+  // ── Commit (add → commit with message) ─────────────────────
+  ipcMain.handle('github:commit', (_evt, cwd: string, message: string) => {
+    try {
+      execSync('git add -A', { cwd, encoding: 'utf-8', timeout: 5000 });
+      execSync(`git commit -m ${JSON.stringify(message)}`, { cwd, encoding: 'utf-8', timeout: 5000 });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  });
+
   // ── Sync (add → commit → pull --rebase → push) ─────────────
   ipcMain.handle('github:sync', (_evt, cwd: string, branch: string) => {
     return new Promise<{ pushed: boolean; conflicts: boolean; log: string }>((resolve) => {

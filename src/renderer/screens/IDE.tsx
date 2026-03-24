@@ -16,7 +16,6 @@ import GitHubAuthModal from '../components/GitHubAuthModal';
 import { useFileManager } from '../hooks/useFileManager';
 import { useTerminal } from '../hooks/useTerminal';
 import { usePanels } from '../hooks/usePanels';
-import { useGitPanel } from '../hooks/useGitPanel';
 import { useGitHub } from '../hooks/useGitHub';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useToast } from '../hooks/useToast';
@@ -26,13 +25,34 @@ import TabBar from '../components/TabBar';
 
 const NOISE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E")`;
 
+function makeDragH(
+  ref: React.MutableRefObject<{ startX: number; startW: number } | null>,
+  current: number,
+  setter: (v: number) => void,
+  min: number, max: number,
+  invert = false,
+) {
+  return (e: React.MouseEvent) => {
+    e.preventDefault();
+    ref.current = { startX: e.clientX, startW: current };
+    const onMove = (ev: MouseEvent) => {
+      if (!ref.current) return;
+      const delta = (ref.current.startX - ev.clientX) * (invert ? -1 : 1);
+      setter(Math.max(min, Math.min(max, ref.current.startW + delta)));
+    };
+    const onUp = () => { ref.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+}
+
 export default function IDE() {
   const panels = usePanels();
   const fileManager = useFileManager();
   const terminal = useTerminal({
     onPortDetected: () => panels.setShowPreview(true),
   });
-  const gitPanel = useGitPanel();
+  const [gitChangeCount, setGitChangeCount] = useState(0);
   const github = useGitHub({ onProjectOpen: fileManager.openProject });
 
   // Track Claude streaming status for toolbar indicator
@@ -41,7 +61,7 @@ export default function IDE() {
   const [chatTab, setChatTab] = useState<ChatTab>('chat');
   const [showSettings, setShowSettings] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
-  const { toast, showToast: _showToast } = useToast();
+  const { toast } = useToast();
   const { settings, updateSetting } = useSettings();
 
   useKeyboardShortcuts({
@@ -68,27 +88,6 @@ export default function IDE() {
   const chatDragRef     = useRef<{ startX: number; startW: number } | null>(null);
   const terminalDragRef = useRef<{ startY: number; startH: number } | null>(null);
   const sidebarDragRef  = useRef<{ startX: number; startW: number } | null>(null);
-
-  function makeDragH(
-    ref: React.MutableRefObject<{ startX: number; startW: number } | null>,
-    current: number,
-    setter: (v: number) => void,
-    min: number, max: number,
-    invert = false,
-  ) {
-    return (e: React.MouseEvent) => {
-      e.preventDefault();
-      ref.current = { startX: e.clientX, startW: current };
-      const onMove = (ev: MouseEvent) => {
-        if (!ref.current) return;
-        const delta = (ref.current.startX - ev.clientX) * (invert ? -1 : 1);
-        setter(Math.max(min, Math.min(max, ref.current.startW + delta)));
-      };
-      const onUp = () => { ref.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
-    };
-  }
 
   function startTerminalDrag(e: React.MouseEvent) {
     e.preventDefault();
@@ -144,7 +143,7 @@ export default function IDE() {
         showGit={panels.showGit}
         showFileTree={panels.showFileTree}
         showTerminal={terminal.isExpanded}
-        gitChangeCount={gitPanel.gitChangeCount}
+        gitChangeCount={gitChangeCount}
         livePort={terminal.detectedPort}
         isChatStreaming={isChatStreaming}
         onOpenPalette={() => setShowPalette(true)}
@@ -385,6 +384,8 @@ export default function IDE() {
           onClose={panels.toggleGit}
           projectPath={fileManager.projectPath}
           onSyncProgress={(msg) => terminal.appendOutput(`[git] ${msg}`)}
+          onConnect={() => github.setShowAuthModal(true)}
+          onChangesUpdate={setGitChangeCount}
         />
       </ErrorBoundary>
       <GitHubAuthModal

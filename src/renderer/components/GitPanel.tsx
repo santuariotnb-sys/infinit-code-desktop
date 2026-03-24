@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGitStatus } from '../hooks/useGitStatus';
 import { useGitOperations } from '../hooks/useGitOperations';
 
@@ -7,6 +7,8 @@ interface GitPanelProps {
   onSyncProgress?: (msg: string) => void;
   open: boolean;
   onClose: () => void;
+  onConnect?: () => void;
+  onChangesUpdate?: (count: number) => void;
 }
 
 const STATUS_BADGE: Record<string, { label: string; color: string }> = {
@@ -19,13 +21,15 @@ const STATUS_BADGE: Record<string, { label: string; color: string }> = {
   U: { label: 'U', color: '#d93030' },
 };
 
-export default function GitPanel({ projectPath, onSyncProgress, open, onClose }: GitPanelProps) {
+export default function GitPanel({ projectPath, onSyncProgress, open, onClose, onConnect, onChangesUpdate }: GitPanelProps) {
   const [commitMsg, setCommitMsg] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [showBranchInput, setShowBranchInput] = useState(false);
 
   const { branch, setBranch, branches, changes, localChangeCount, refreshStatus } = useGitStatus(projectPath);
   const ops = useGitOperations({ projectPath, branch, onProgress: onSyncProgress, onRefresh: refreshStatus });
+
+  useEffect(() => { onChangesUpdate?.(changes.length); }, [changes.length, onChangesUpdate]);
 
   return (
     <div
@@ -100,7 +104,7 @@ export default function GitPanel({ projectPath, onSyncProgress, open, onClose }:
       <div style={styles.body}>
         {!ops.connected ? (
           <div style={styles.connectArea}>
-            <button style={styles.connectBtn} onClick={ops.handleConnect} disabled={ops.loading}>
+            <button style={styles.connectBtn} onClick={onConnect} disabled={ops.loading}>
               {ops.loading ? 'Conectando...' : 'Conectar com GitHub →'}
             </button>
             <p style={styles.connectHint}>Necessário para sync com Lovable</p>
