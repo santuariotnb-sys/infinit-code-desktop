@@ -1,7 +1,20 @@
 import { ipcMain, BrowserWindow, shell } from 'electron';
 import http from 'http';
 import https from 'https';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import ElectronStore from 'electron-store';
+
+// Mesmo path que github.ts usa — garante que list-repos encontra o token
+const GH_TOKEN_FILE = path.join(os.homedir(), '.config', 'infinit-code', 'gh-token');
+
+function saveGhTokenFile(token: string) {
+  try {
+    fs.mkdirSync(path.dirname(GH_TOKEN_FILE), { recursive: true });
+    fs.writeFileSync(GH_TOKEN_FILE, token, { mode: 0o600 });
+  } catch { /* ignore */ }
+}
 
 const store = new ElectronStore<{
   session?: { email: string; name: string; avatar: string; provider: 'google' | 'github' };
@@ -91,6 +104,9 @@ async function githubLoginFlow(): Promise<{ email: string; name: string; avatar:
         const { access_token, error } = JSON.parse(tokenRaw);
 
         if (access_token) {
+          // Salva token para github:list-repos (mesmo arquivo que github.ts lê)
+          saveGhTokenFile(access_token);
+
           const userRaw = await httpsGet('https://api.github.com/user', access_token);
           const user = JSON.parse(userRaw);
           let email = user.email || '';

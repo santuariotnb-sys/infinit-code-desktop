@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Splash from './screens/Splash';
+import Login  from './screens/Login';
 import IDE    from './screens/IDE';
 
-type Screen = 'splash' | 'ide';
+type Screen = 'splash' | 'login' | 'ide';
 
 const SPLASH_MIN_MS = 2300;
 
@@ -16,7 +17,14 @@ export default function App() {
       const elapsed   = Date.now() - splashStart;
       const remaining = Math.max(0, SPLASH_MIN_MS - elapsed);
       await new Promise((r) => setTimeout(r, remaining));
-      setScreen('ide');
+
+      // Se já tem sessão salva, vai direto para o IDE
+      try {
+        const session = await window.api.auth.getSession();
+        setScreen(session ? 'ide' : 'login');
+      } catch {
+        setScreen('login');
+      }
     }
 
     bootCheck();
@@ -31,6 +39,7 @@ export default function App() {
     <>
       {isMac && screen !== 'splash' && <div className="titlebar-drag" />}
       {screen === 'splash' && <Splash />}
+      {screen === 'login'  && <Login onLogin={() => setScreen('ide')} />}
       {screen === 'ide'    && <IDE />}
     </>
   );
