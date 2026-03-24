@@ -119,13 +119,20 @@ export default function IDE() {
                     </div>
                     {github.isCloneLoading
                       ? <p style={styles.noFileText}>Carregando repositórios...</p>
-                      : github.cloneRepos.length === 0
-                        ? <p style={styles.noFileText}>Nenhum repositório encontrado.</p>
-                        : github.cloneRepos.map((r, i) => (
-                            <button key={i} style={styles.emptyBtnRepo} onClick={() => github.handleCloneRepo(r)}>
-                              {String(r.fullName)}
-                            </button>
-                          ))
+                      : github.cloneError
+                        ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <p style={{ ...styles.noFileText, color: '#d04040' }}>Erro: {github.cloneError}</p>
+                            <button style={styles.emptyBtn} onClick={github.handleShowClone}>↺ Tentar novamente</button>
+                          </div>
+                        )
+                        : github.cloneRepos.length === 0
+                          ? <p style={styles.noFileText}>Nenhum repositório encontrado.</p>
+                          : github.cloneRepos.map((r, i) => (
+                              <button key={i} style={styles.emptyBtnRepo} onClick={() => github.handleCloneRepo(r)}>
+                                {String(r.fullName)}
+                              </button>
+                            ))
                     }
                   </div>
                 ) : (

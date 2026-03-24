@@ -221,18 +221,27 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('github:list-repos', async () => {
     try {
       const token = await getToken();
-      if (!token) return { repos: [], error: 'Not authenticated' };
-      const raw = await httpsGet('https://api.github.com/user/repos?sort=updated&per_page=50&affiliation=owner,collaborator', token);
-      const list: Record<string, unknown>[] = JSON.parse(raw);
+      if (!token) return { repos: [], error: 'Não autenticado' };
+
+      const raw = await httpsGet('https://api.github.com/user/repos?sort=updated&per_page=100', token);
+      let parsed: unknown;
+      try { parsed = JSON.parse(raw); } catch { return { repos: [], error: 'Resposta inválida da API' }; }
+
+      if (!Array.isArray(parsed)) {
+        const msg = (parsed as Record<string, unknown>)?.message as string | undefined;
+        return { repos: [], error: msg ?? 'Erro na API do GitHub' };
+      }
+
+      const list = parsed as Record<string, unknown>[];
       return {
         repos: list.map((r) => ({
-          name: r.name,
-          fullName: r.full_name,
-          private: r.private,
+          name:          r.name,
+          fullName:      r.full_name,
+          private:       r.private,
           defaultBranch: r.default_branch,
-          updatedAt: r.updated_at,
-          description: r.description,
-          language: r.language,
+          updatedAt:     r.updated_at,
+          description:   r.description,
+          language:      r.language,
         })),
       };
     } catch (e) {

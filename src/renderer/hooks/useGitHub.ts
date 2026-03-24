@@ -14,6 +14,7 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
   const [isCloneMode, setIsCloneMode] = useState(false);
   const [cloneRepos, setCloneRepos] = useState<GitRepo[]>([]);
   const [isCloneLoading, setIsCloneLoading] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
 
   useEffect(() => {
     window.api.github.authStatus()
@@ -33,6 +34,7 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
 
   async function handleShowClone() {
     setIsCloneLoading(true);
+    setCloneError(null);
     try {
       if (!ghStatus?.connected) {
         await window.api.github.connectOAuth();
@@ -41,10 +43,17 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
         if (!s.connected) { setIsCloneLoading(false); return; }
       }
       const result = await window.api.github.listRepos();
-      setCloneRepos((result?.repos || []) as GitRepo[]);
+      if (result?.error) {
+        setCloneError(result.error as string);
+        setCloneRepos([]);
+      } else {
+        setCloneRepos((result?.repos || []) as GitRepo[]);
+      }
       setIsCloneMode(true);
-    } catch {
+    } catch (e) {
+      setCloneError(String(e));
       setCloneRepos([]);
+      setIsCloneMode(true);
     }
     setIsCloneLoading(false);
   }
@@ -70,6 +79,7 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
     ghStatus,
     isCloneMode,
     cloneRepos,
+    cloneError,
     isCloneLoading,
     setIsCloneMode,
     handleConnectGitHub,
