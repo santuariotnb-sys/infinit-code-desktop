@@ -9,14 +9,36 @@ const VIEWPORT: Record<ViewportSize, string> = {
 };
 
 const SERVER_REGEXES = [
+  // Genérico: localhost:PORT em qualquer formato
   /(?:localhost|127\.0\.0\.1|\[::1\]):(\d{4,5})/,
+  // Vite / Next.js / CRA: "Local: http://localhost:5173"
   /Local:\s+https?:\/\/(?:localhost|127\.0\.0\.1):(\d{4,5})/i,
+  // Astro: "http://localhost:4321/"
+  /https?:\/\/localhost:(\d{4,5})/i,
+  // Fastify: "Server listening at http://..."
+  /Server listening at.*?:(\d{4,5})/i,
+  // Remix / Nuxt / Analog: "started at http://localhost:PORT"
+  /started at.*?:(\d{4,5})/i,
+  // ready on / ready started server on
   /ready (?:on|started server on).*?:(\d{4,5})/i,
-  /(?:started|listening|running|available).*?port[:\s]+(\d{4,5})/i,
-  /on port[:\s]+(\d{4,5})/i,
+  // listening on port / running on port
+  /(?:started|listening|running|available|serving).*?port[:\s]+(\d{4,5})/i,
+  // "on port 3000"
+  /\bon port[:\s]+(\d{4,5})/i,
+  // "PORT → " ou "PORT ->"
   /:\s*(\d{4,5})\s*(?:→|->|\()/,
+  // "App running at http://..."
   /App running at.*?:(\d{4,5})/i,
+  // "Network: http://..."
   /Network:.*?:(\d{4,5})/i,
+  // Django / Flask / Uvicorn: "Uvicorn running on http://0.0.0.0:8000"
+  /running on https?:\/\/[^:]+:(\d{4,5})/i,
+  // Laravel: "Development Server started: http://localhost:8000"
+  /Development Server started.*?:(\d{4,5})/i,
+  // NestJS: "Nest application successfully started +Xms"
+  /application successfully started.*?:(\d{4,5})/i,
+  // Generic "port XXXX" fallback
+  /\bport\s+(\d{4,5})\b/i,
 ];
 
 const HMR_REGEXES = [/HMR/, /Fast Refresh/, /reloaded/i, /hot update/i];
@@ -36,30 +58,66 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
   const [serverError, setServerError] = useState(false);
   const [manualPort, setManualPort] = useState('');
   const [showPortInput, setShowPortInput] = useState(false);
+  const [iframeRetries, setIframeRetries] = useState(0);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const probeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const detectedPortRef = useRef<number | null>(null);
+
+  // Auto-probe portas comuns se nenhuma for detectada em 8s após output
+  function scheduleProbe() {
+    if (probeTimer.current) clearTimeout(probeTimer.current);
+    probeTimer.current = setTimeout(async () => {
+      if (detectedPortRef.current) return;
+      const candidates = [3000, 5173, 8080, 4321, 8000, 3001, 4000, 8888];
+      for (const p of candidates) {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 600);
+          const res = await fetch(`http://localhost:${p}`, { signal: ctrl.signal, mode: 'no-cors' });
+          clearTimeout(t);
+          if (res.type === 'opaque' || res.ok) {
+            detectedPortRef.current = p;
+            setPort(p);
+            setStatus('loading');
+            setServerError(false);
+            break;
+          }
+        } catch { /* porta não responde, continua */ }
+      }
+    }, 8000);
+  }
 
   // Detect server from terminal output
   useEffect(() => {
     if (!terminalOutput) return;
-    const lines = terminalOutput.split('\n').slice(-30);
+    // Checa as últimas 100 linhas (era 30 — aumentado para não perder logs antigos)
+    const lines = terminalOutput.split('\n').slice(-100);
 
     for (const line of lines) {
       for (const re of SERVER_REGEXES) {
         const m = line.match(re);
         if (m) {
           const detected = parseInt(m[1], 10);
-          if (detected !== port) {
+          if (detected >= 1024 && detected <= 65535 && detected !== detectedPortRef.current) {
+            detectedPortRef.current = detected;
+            if (probeTimer.current) clearTimeout(probeTimer.current);
             setPort(detected);
             setStatus('loading');
             setServerError(false);
+            setIframeRetries(0);
           }
           break;
         }
       }
     }
 
-    // Check for errors
     const recent = lines.join('\n');
+
+    // Agenda auto-probe se output chegou mas porta ainda não detectada
+    if (!detectedPortRef.current) scheduleProbe();
+
+    // Check for errors
     if (ERROR_REGEXES.some((r) => r.test(recent))) {
       setServerError(true);
     } else {
@@ -67,21 +125,51 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
     }
 
     // HMR detection
-    if (port && HMR_REGEXES.some((r) => r.test(recent))) {
+    if (detectedPortRef.current && HMR_REGEXES.some((r) => r.test(recent))) {
       setIframeKey((k) => k + 1);
       setHmrFlash(true);
       if (flashTimer.current) clearTimeout(flashTimer.current);
       flashTimer.current = setTimeout(() => setHmrFlash(false), 800);
     }
-  }, [terminalOutput, port]);
+  }, [terminalOutput]);
 
   function handleLoad() {
-    if (status === 'loading') setStatus('live');
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    setIframeRetries(0);
+    setStatus('live');
+    setServerError(false);
+  }
+
+  function handleIframeError() {
+    // Servidor pode ainda estar subindo — tenta até 5x com backoff antes de mostrar erro
+    setIframeRetries((r) => {
+      const next = r + 1;
+      if (next >= 5) {
+        setStatus('error');
+        setServerError(true);
+        return next;
+      }
+      const delay = Math.min(1000 * next, 4000);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      retryTimer.current = setTimeout(() => {
+        setIframeKey((k) => k + 1);
+      }, delay);
+      return next;
+    });
   }
 
   function handleRefresh() {
+    setIframeRetries(0);
     setIframeKey((k) => k + 1);
   }
+
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      if (probeTimer.current) clearTimeout(probeTimer.current);
+    };
+  }, []);
 
   function openInBrowser() {
     if (port) window.api.shell.openExternal(`http://localhost:${port}`);
@@ -92,9 +180,12 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
   function handleManualPort() {
     const p = parseInt(manualPort, 10);
     if (p >= 1024 && p <= 65535) {
+      detectedPortRef.current = p;
+      if (probeTimer.current) clearTimeout(probeTimer.current);
       setPort(p);
       setStatus('loading');
       setServerError(false);
+      setIframeRetries(0);
       setShowPortInput(false);
       setManualPort('');
     }
@@ -206,7 +297,7 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
           style={{ ...styles.iframe, width: VIEWPORT[viewport], maxWidth: '100%' }}
           title="Preview"
           onLoad={handleLoad}
-          onError={() => { setStatus('error'); setServerError(true); }}
+          onError={handleIframeError}
         />
       </div>
     </div>
