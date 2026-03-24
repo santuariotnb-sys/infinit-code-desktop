@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 
 interface LicenseProps {
   onActivated: () => void;
+  email?: string; // pré-preenchido da sessão de login
 }
 
 const LOGO_SVG = (
@@ -13,9 +14,9 @@ const LOGO_SVG = (
   </svg>
 );
 
-export default function License({ onActivated }: LicenseProps) {
+export default function License({ onActivated, email: emailProp = '' }: LicenseProps) {
   const [segs, setSegs] = useState(['', '', '', '', '']);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(emailProp);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -124,14 +125,21 @@ export default function License({ onActivated }: LicenseProps) {
 
           {/* Email */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <div style={{ fontSize: 9, letterSpacing: '.14em', color: '#a8aab4', fontFamily: 'monospace', textTransform: 'uppercase' }}>Email da compra</div>
+            <div style={{ fontSize: 9, letterSpacing: '.14em', color: '#a8aab4', fontFamily: 'monospace', textTransform: 'uppercase' }}>
+              Email da compra
+              {emailProp && (
+                <span style={{ marginLeft: 8, color: '#3CB043', fontSize: 9 }}>● da sua conta</span>
+              )}
+            </div>
             <input
               className="ob-input"
               type="email"
               placeholder="guilherme@email.com"
               value={email}
-              onChange={(e) => { setEmail(e.target.value); setError(''); }}
+              readOnly={!!emailProp}
+              onChange={(e) => { if (!emailProp) { setEmail(e.target.value); setError(''); } }}
               onKeyDown={(e) => e.key === 'Enter' && handleActivate()}
+              style={emailProp ? { opacity: 0.7, cursor: 'default' } : undefined}
             />
           </div>
 
