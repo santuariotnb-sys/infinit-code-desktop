@@ -40,26 +40,44 @@ function httpsPost(opts: https.RequestOptions, body: string): Promise<string> {
   });
 }
 
-// ── GitHub OAuth (porta 4244 — distinta do flow de repos 4242) ─────
+// ── GitHub Device Flow (sem client_secret, ideal para desktop) ─────
 const GH_CLIENT_ID = process.env.GITHUB_CLIENT_ID || 'Ov23liFYvVqtk4wX3qrE';
 
-function githubLoginFlow(): Promise<{ email: string; name: string; avatar: string } | null> {
+async function githubLoginFlow(): Promise<{ email: string; name: string; avatar: string } | null> {
+  // 1. Solicitar device code
+  const deviceRaw = await httpsPost({
+    hostname: 'github.com',
+    path: '/login/device/code',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+      'User-Agent': 'Infinit-Code-Desktop',
+    },
+  }, `client_id=${GH_CLIENT_ID}&scope=user:email`);
+
+  const { device_code, user_code, verification_uri, interval = 5, expires_in = 900 } = JSON.parse(deviceRaw);
+  if (!device_code) return null;
+
+  // 2. Mostrar código ao usuário e abrir browser
+  const { dialog } = await import('electron');
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Login com GitHub',
+    message: 'Código de verificação:',
+    detail: `${user_code}\n\nO browser vai abrir. Cole este código quando solicitado e autorize o Infinit Code.`,
+    buttons: ['Abrir GitHub'],
+    defaultId: 0,
+  });
+  shell.openExternal(verification_uri);
+
+  // 3. Polling até o usuário autorizar
+  const pollMs = (interval + 1) * 1000;
+  const expiresAt = Date.now() + expires_in * 1000;
+
   return new Promise((resolve) => {
-    const server = http.createServer(async (req, res) => {
+    const poll = async () => {
+      if (Date.now() > expiresAt) { resolve(null); return; }
       try {
-        const urlObj = new URL(req.url!, 'http://localhost:4244');
-        if (urlObj.pathname !== '/callback') { res.writeHead(404); res.end(); return; }
-
-        const code = urlObj.searchParams.get('code');
-        if (!code) {
-          res.writeHead(400); res.end('No code');
-          server.close(); resolve(null); return;
-        }
-
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end('<html><body style="font-family:sans-serif;background:#dde0e5;color:#1a1c20;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><h2 style="color:#3CB043">✓ Login realizado! Volte ao Infinit Code.</h2></body></html>');
-        server.close();
-
         const tokenRaw = await httpsPost({
           hostname: 'github.com',
           path: '/login/oauth/access_token',
@@ -68,39 +86,33 @@ function githubLoginFlow(): Promise<{ email: string; name: string; avatar: strin
             Accept: 'application/json',
             'User-Agent': 'Infinit-Code-Desktop',
           },
-        }, `client_id=${GH_CLIENT_ID}&code=${code}`);
+        }, `client_id=${GH_CLIENT_ID}&device_code=${device_code}&grant_type=urn:ietf:params:oauth:grant-type:device_code`);
 
-        const { access_token } = JSON.parse(tokenRaw);
-        if (!access_token) { resolve(null); return; }
+        const { access_token, error } = JSON.parse(tokenRaw);
 
-        const userRaw = await httpsGet('https://api.github.com/user', access_token);
-        const user = JSON.parse(userRaw);
-
-        // GitHub pode não retornar email público — busca na lista
-        let email = user.email || '';
-        if (!email) {
-          try {
-            const emailsRaw = await httpsGet('https://api.github.com/user/emails', access_token);
-            const emails: { email: string; primary: boolean; verified: boolean }[] = JSON.parse(emailsRaw);
-            const primary = emails.find((e) => e.primary && e.verified);
-            email = primary?.email || emails[0]?.email || '';
-          } catch { /* sem emails */ }
+        if (access_token) {
+          const userRaw = await httpsGet('https://api.github.com/user', access_token);
+          const user = JSON.parse(userRaw);
+          let email = user.email || '';
+          if (!email) {
+            try {
+              const emailsRaw = await httpsGet('https://api.github.com/user/emails', access_token);
+              const emails: { email: string; primary: boolean; verified: boolean }[] = JSON.parse(emailsRaw);
+              const primary = emails.find((e) => e.primary && e.verified);
+              email = primary?.email || emails[0]?.email || '';
+            } catch { /* sem emails */ }
+          }
+          resolve({ email, name: user.name || user.login, avatar: user.avatar_url });
+        } else if (error === 'authorization_pending' || error === 'slow_down') {
+          setTimeout(poll, pollMs);
+        } else {
+          resolve(null);
         }
-
-        resolve({ email, name: user.name || user.login, avatar: user.avatar_url });
       } catch {
-        resolve(null);
+        setTimeout(poll, pollMs);
       }
-    });
-
-    server.listen(4244, () => {
-      shell.openExternal(
-        `https://github.com/login/oauth/authorize?client_id=${GH_CLIENT_ID}&scope=user:email&redirect_uri=http://localhost:4244/callback`
-      );
-    });
-
-    server.on('error', () => resolve(null));
-    setTimeout(() => { server.close(); resolve(null); }, 300_000);
+    };
+    setTimeout(poll, pollMs);
   });
 }
 
