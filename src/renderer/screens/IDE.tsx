@@ -59,47 +59,58 @@ export default function IDE() {
     if (terminal.detectedPort) panels.setShowPreview(true);
   }, [terminal.detectedPort]);
 
-  const [previewWidth, setPreviewWidth] = useState(420);
-  const [chatWidth, setChatWidth] = useState(300);
-  const previewDragRef = useRef<{ startX: number; startW: number } | null>(null);
-  const chatDragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const [previewWidth,   setPreviewWidth]   = useState(420);
+  const [chatWidth,      setChatWidth]      = useState(300);
+  const [terminalHeight, setTerminalHeight] = useState(220);
+  const [sidebarWidth,   setSidebarWidth]   = useState(200);
 
-  function startPreviewDrag(e: React.MouseEvent) {
-    previewDragRef.current = { startX: e.clientX, startW: previewWidth };
+  const previewDragRef  = useRef<{ startX: number; startW: number } | null>(null);
+  const chatDragRef     = useRef<{ startX: number; startW: number } | null>(null);
+  const terminalDragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const sidebarDragRef  = useRef<{ startX: number; startW: number } | null>(null);
+
+  function makeDragH(
+    ref: React.MutableRefObject<{ startX: number; startW: number } | null>,
+    current: number,
+    setter: (v: number) => void,
+    min: number, max: number,
+    invert = false,
+  ) {
+    return (e: React.MouseEvent) => {
+      e.preventDefault();
+      ref.current = { startX: e.clientX, startW: current };
+      const onMove = (ev: MouseEvent) => {
+        if (!ref.current) return;
+        const delta = (ref.current.startX - ev.clientX) * (invert ? -1 : 1);
+        setter(Math.max(min, Math.min(max, ref.current.startW + delta)));
+      };
+      const onUp = () => { ref.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    };
+  }
+
+  function startTerminalDrag(e: React.MouseEvent) {
+    e.preventDefault();
+    terminalDragRef.current = { startY: e.clientY, startH: terminalHeight };
     const onMove = (ev: MouseEvent) => {
-      if (!previewDragRef.current) return;
-      const delta = previewDragRef.current.startX - ev.clientX;
-      setPreviewWidth(Math.max(280, Math.min(1000, previewDragRef.current.startW + delta)));
+      if (!terminalDragRef.current) return;
+      const delta = terminalDragRef.current.startY - ev.clientY;
+      setTerminalHeight(Math.max(60, Math.min(600, terminalDragRef.current.startH + delta)));
     };
-    const onUp = () => {
-      previewDragRef.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
+    const onUp = () => { terminalDragRef.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   }
 
-  function startChatDrag(e: React.MouseEvent) {
-    chatDragRef.current = { startX: e.clientX, startW: chatWidth };
-    const onMove = (ev: MouseEvent) => {
-      if (!chatDragRef.current) return;
-      const delta = chatDragRef.current.startX - ev.clientX;
-      setChatWidth(Math.max(220, Math.min(600, chatDragRef.current.startW + delta)));
-    };
-    const onUp = () => {
-      chatDragRef.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }
+  const startPreviewDrag = makeDragH(previewDragRef,  previewWidth,  setPreviewWidth,  280, 1000);
+  const startChatDrag    = makeDragH(chatDragRef,     chatWidth,     setChatWidth,     220, 600);
+  const startSidebarDrag = makeDragH(sidebarDragRef,  sidebarWidth,  setSidebarWidth,  120, 480, true);
 
-  const TERMINAL_HEIGHT = terminal.isExpanded ? 220 : 34;
-  const SIDEBAR_WIDTH = panels.showFileTree ? 200 : 0;
-  const PREVIEW_WIDTH = panels.showPreview ? previewWidth : 0;
-  const CHAT_WIDTH = chatWidth;
+  const TERMINAL_HEIGHT = terminal.isExpanded ? terminalHeight : 34;
+  const SIDEBAR_WIDTH   = panels.showFileTree ? sidebarWidth : 0;
+  const PREVIEW_WIDTH   = panels.showPreview  ? previewWidth : 0;
+  const CHAT_WIDTH      = chatWidth;
 
   const fileName = fileManager.openFile
     ? fileManager.openFile.split('/').pop() || ''
@@ -112,6 +123,8 @@ export default function IDE() {
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.4); border-radius: 2px; }
         ::-webkit-scrollbar-track { background: transparent; }
+        [data-resize]:hover { background: rgba(60,176,67,0.35) !important; }
+        [data-resize]:active { background: rgba(60,176,67,0.55) !important; }
       `}</style>
 
       <Toolbar
@@ -140,7 +153,7 @@ export default function IDE() {
 
       <div style={styles.main}>
         {panels.showFileTree && (
-          <div style={{ ...styles.sidebar, width: SIDEBAR_WIDTH }}>
+          <div style={{ ...styles.sidebar, width: SIDEBAR_WIDTH, position: 'relative' }}>
             <ErrorBoundary name="FileTree">
               <FileTree
                 files={fileManager.files}
@@ -148,6 +161,8 @@ export default function IDE() {
                 onSelectFile={fileManager.handleSelectFile}
               />
             </ErrorBoundary>
+            {/* Sidebar resize handle */}
+            <div data-resize style={styles.resizeHandleV} onMouseDown={startSidebarDrag} title="Arraste para redimensionar" />
           </div>
         )}
 
@@ -232,6 +247,10 @@ export default function IDE() {
           </div>
 
           <div style={{ ...styles.terminalPanel, height: TERMINAL_HEIGHT }}>
+            {/* Terminal vertical resize handle */}
+            {terminal.isExpanded && (
+              <div data-resize style={styles.resizeHandleH} onMouseDown={startTerminalDrag} title="Arraste para redimensionar" />
+            )}
             <div
               style={styles.terminalHandle}
               onClick={() => terminal.setIsExpanded((v) => !v)}
@@ -440,13 +459,21 @@ const styles: Record<string, React.CSSProperties> = {
   terminalToggle: { color: 'rgba(255,255,255,0.2)', fontSize: 10 },
   terminalBody: { flex: 1, overflow: 'hidden' },
   panel: { borderLeft: '1px solid rgba(255,255,255,0.55)', flexShrink: 0, overflow: 'hidden' },
+  // Horizontal panel resize (col-resize) — borda esquerda de Preview/Chat
   resizeHandle: {
-    width: 4,
-    cursor: 'col-resize',
-    flexShrink: 0,
-    background: 'transparent',
-    transition: 'background 0.15s',
-    zIndex: 10,
+    width: 5, cursor: 'col-resize', flexShrink: 0,
+    background: 'transparent', transition: 'background 0.15s', zIndex: 10,
+  },
+  // Vertical panel resize (col-resize) — borda direita da Sidebar
+  resizeHandleV: {
+    position: 'absolute' as const, top: 0, right: 0, bottom: 0,
+    width: 5, cursor: 'col-resize', zIndex: 20,
+    background: 'transparent', transition: 'background 0.15s',
+  },
+  // Horizontal strip resize (row-resize) — borda superior do Terminal
+  resizeHandleH: {
+    height: 5, cursor: 'row-resize', flexShrink: 0,
+    background: 'transparent', transition: 'background 0.15s', zIndex: 10,
   },
   noFile: {
     height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
