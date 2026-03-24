@@ -6,15 +6,12 @@ import path from 'path';
 import os from 'os';
 import ElectronStore from 'electron-store';
 
-// Mesmo path que github.ts usa — garante que list-repos encontra o token
-const GH_TOKEN_FILE = path.join(os.homedir(), '.config', 'infinit-code', 'gh-token');
+import { getSecret, setSecret } from '../services/keychain';
 
-function saveGhTokenFile(token: string) {
-  try {
-    fs.mkdirSync(path.dirname(GH_TOKEN_FILE), { recursive: true });
-    fs.writeFileSync(GH_TOKEN_FILE, token, { mode: 0o600 });
-  } catch { /* ignore */ }
-}
+const GH_TOKEN_KEY = 'gh-token';
+
+function saveGhToken(token: string) { setSecret(GH_TOKEN_KEY, token); }
+function getGhToken(): string | null { return getSecret(GH_TOKEN_KEY); }
 
 const store = new ElectronStore<{
   session?: { email: string; name: string; avatar: string; provider: 'google' | 'github' };
@@ -105,7 +102,7 @@ async function githubLoginFlow(): Promise<{ email: string; name: string; avatar:
 
         if (access_token) {
           // Salva token para github:list-repos (mesmo arquivo que github.ts lê)
-          saveGhTokenFile(access_token);
+          saveGhToken(access_token);
 
           const userRaw = await httpsGet('https://api.github.com/user', access_token);
           const user = JSON.parse(userRaw);
@@ -221,7 +218,7 @@ export function registerAuthHandlers(_mainWindow: BrowserWindow): void {
   ipcMain.handle('auth:github', async () => {
     try {
       // 1. Usa token já salvo (do PAT conectado no GitPanel)
-      const savedToken = fs.existsSync(GH_TOKEN_FILE) ? fs.readFileSync(GH_TOKEN_FILE, 'utf-8').trim() : '';
+      const savedToken = getGhToken() || '';
       if (savedToken) {
         const userRaw = await httpsGet('https://api.github.com/user', savedToken);
         const user = JSON.parse(userRaw);
@@ -247,7 +244,7 @@ export function registerAuthHandlers(_mainWindow: BrowserWindow): void {
       const userRaw = await httpsGet('https://api.github.com/user', token);
       const user = JSON.parse(userRaw);
       if (!user.login) return { ok: false, error: 'Token inválido' };
-      saveGhTokenFile(token);
+      saveGhToken(token);
       const session = { email: user.email || user.login, name: user.name || user.login, avatar: user.avatar_url || '', provider: 'github' as const };
       store.set('session', session);
       return { ok: true, ...session };

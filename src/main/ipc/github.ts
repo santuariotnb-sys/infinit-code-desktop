@@ -1,44 +1,18 @@
-import { ipcMain, BrowserWindow, shell } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { execSync, spawn } from 'child_process';
-import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-// Keytar optional – may not be built in every env
-let keytar: { getPassword: (s: string, a: string) => Promise<string | null>; setPassword: (s: string, a: string, p: string) => Promise<void>; deletePassword: (s: string, a: string) => Promise<boolean> } | null = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  keytar = require('keytar');
-} catch { /* keytar unavailable */ }
+import { getSecret, setSecret, deleteSecret } from '../services/keychain';
 
-const SERVICE = 'infinit-code-github';
-const ACCOUNT = 'oauth-token';
 const CLIENT_ID = 'Ov23liFYvVqtk4wX3qrE';
+const GH_TOKEN_KEY = 'gh-token';
 
-// File-based token fallback when keytar is unavailable
-const TOKEN_FILE = path.join(os.homedir(), '.config', 'infinit-code', 'gh-token');
-
-function readTokenFile(): string | null {
-  try {
-    if (fs.existsSync(TOKEN_FILE)) {
-      return fs.readFileSync(TOKEN_FILE, 'utf-8').trim() || null;
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
-function writeTokenFile(token: string) {
-  try {
-    fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
-    fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
-  } catch { /* ignore */ }
-}
-
-function deleteTokenFile() {
-  try { if (fs.existsSync(TOKEN_FILE)) fs.unlinkSync(TOKEN_FILE); } catch { /* ignore */ }
-}
+function getToken(): string | null { return getSecret(GH_TOKEN_KEY); }
+function saveToken(token: string): void { setSecret(GH_TOKEN_KEY, token); }
+function deleteToken(): void { deleteSecret(GH_TOKEN_KEY); }
 
 function httpsGet(url: string, token?: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -73,23 +47,6 @@ function httpsPost(opts: https.RequestOptions, body: string): Promise<string> {
   });
 }
 
-async function getToken(): Promise<string | null> {
-  if (keytar) {
-    const t = await keytar.getPassword(SERVICE, ACCOUNT);
-    if (t) return t;
-  }
-  return readTokenFile();
-}
-
-async function saveToken(token: string) {
-  if (keytar) await keytar.setPassword(SERVICE, ACCOUNT, token);
-  writeTokenFile(token);
-}
-
-async function deleteToken() {
-  if (keytar) await keytar.deletePassword(SERVICE, ACCOUNT);
-  deleteTokenFile();
-}
 
 const fsWatchers = new Map<string, fs.FSWatcher>();
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -142,7 +99,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
           const data = JSON.parse(raw);
 
           if (data.access_token) {
-            await saveToken(data.access_token);
+            saveToken(data.access_token);
             const userRaw = await httpsGet('https://api.github.com/user', data.access_token);
             const user = JSON.parse(userRaw);
             resolve({ connected: true, user: user.login });
@@ -168,7 +125,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
       const userRaw = await httpsGet('https://api.github.com/user', token);
       const user = JSON.parse(userRaw);
       if (!user.login) return { ok: false, error: 'Token inválido' };
-      await saveToken(token);
+      saveToken(token);
       return { ok: true, user: user.login };
     } catch (e) {
       return { ok: false, error: String(e) };
@@ -178,7 +135,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
   // ── Auth status ────────────────────────────────────────────
   ipcMain.handle('github:auth-status', async () => {
     try {
-      const token = await getToken();
+      const token = getToken();
       if (!token) return { connected: false };
       const raw = await httpsGet('https://api.github.com/user', token);
       const user = JSON.parse(raw);
@@ -190,7 +147,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
   // ── Disconnect ─────────────────────────────────────────────
   ipcMain.handle('github:disconnect', async () => {
-    await deleteToken();
+    deleteToken();
     return { ok: true };
   });
 
@@ -220,7 +177,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
         return { ok: false, error: 'Caminho inválido.' };
       }
 
-      const token = await getToken();
+      const token = getToken();
       if (token) {
         const userRaw = await httpsGet('https://api.github.com/user', token);
         const user = JSON.parse(userRaw);
@@ -247,7 +204,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
   // ── List repos ─────────────────────────────────────────────
   ipcMain.handle('github:list-repos', async () => {
     try {
-      const token = await getToken();
+      const token = getToken();
       if (!token) return { repos: [], error: 'Não autenticado' };
 
       const raw = await httpsGet('https://api.github.com/user/repos?sort=updated&per_page=100', token);
