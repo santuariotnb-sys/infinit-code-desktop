@@ -58,10 +58,11 @@ const config: ForgeConfig = {
       format: 'ULFO',
       overwrite: true,
       contents: (opts) => [
-        { x: 170, y: 180, type: 'file', path: opts.appPath },
-        { x: 380, y: 180, type: 'link', path: '/Applications' },
+        { x: 160, y: 160, type: 'file', path: opts.appPath },
+        { x: 380, y: 160, type: 'link', path: '/Applications' },
+        { x: 270, y: 290, type: 'file', path: path.join(__dirname, 'assets/Instalar.command') },
       ],
-      window: { size: { width: 540, height: 360 } },
+      window: { size: { width: 540, height: 400 } },
     }, ['darwin']),
     new MakerZIP({}, ['darwin']),
     new MakerSquirrel({
