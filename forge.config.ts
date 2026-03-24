@@ -55,7 +55,7 @@ const config: ForgeConfig = {
   makers: [
     new MakerDMG({
       icon: './assets/icon.icns',
-      format: 'ULFO',
+      format: 'UDZO',
       overwrite: true,
       contents: (opts) => [
         { x: 160, y: 160, type: 'file', path: opts.appPath },
