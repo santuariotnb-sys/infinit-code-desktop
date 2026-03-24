@@ -30,13 +30,21 @@ interface LoginProps {
   onLogin: () => void;
 }
 
+type View = 'main' | 'device' | 'pat' | 'google-setup';
+
 export default function Login({ onLogin }: LoginProps) {
   const [loading, setLoading] = useState<'github' | 'google' | 'pat' | 'google-setup' | null>(null);
   const [error, setError] = useState('');
-  const [showPat, setShowPat] = useState(false);
+  const [view, setView] = useState<View>('main');
+  // Device Flow state
+  const [userCode, setUserCode] = useState('');
+  const [verificationUri, setVerificationUri] = useState('https://github.com/login/device');
+  const [copied, setCopied] = useState(false);
+  const pollAbortRef = React.useRef(false);
+  // PAT state
   const [pat, setPat] = useState('');
+  // Google state
   const [googleConfigured, setGoogleConfigured] = useState(false);
-  const [showGoogleSetup, setShowGoogleSetup] = useState(false);
   const [googleClientId, setGoogleClientId] = useState('');
   const [googleClientSecret, setGoogleClientSecret] = useState('');
 
@@ -45,18 +53,34 @@ export default function Login({ onLogin }: LoginProps) {
   }, []);
 
   async function handleGitHub() {
-    setLoading('github');
     setError('');
+    // 1. Token salvo? Login direto
     try {
       const result = await window.api.auth.loginGithub();
-      if (result.ok) {
-        onLogin();
-      } else if (result.error?.toLowerCase().includes('device_flow') || result.error?.toLowerCase().includes('device flow')) {
-        setShowPat(true);
-        setError('Device Flow não habilitado. Use um Personal Access Token:');
-      } else {
-        setError(result.error || 'Falha no login com GitHub.');
+      if (result.ok) { onLogin(); return; }
+    } catch { /* sem token */ }
+
+    // 2. Device Flow
+    setLoading('github');
+    try {
+      const res = await window.api.auth.githubDeviceStart?.();
+      if (!res?.ok) {
+        setError(res?.error?.includes('device_flow_disabled')
+          ? 'Device Flow desabilitado no OAuth App. Ative em github.com/settings/developers ou use um Token.'
+          : res?.error || 'Falha ao iniciar Device Flow.');
+        setLoading(null);
+        return;
       }
+      setUserCode(res.userCode!);
+      setVerificationUri(res.verificationUri || 'https://github.com/login/device');
+      setView('device');
+      setLoading(null);
+      pollAbortRef.current = false;
+      window.api.shell.openExternal(res.verificationUri || 'https://github.com/login/device');
+      const poll = await window.api.auth.githubDevicePoll?.(res.deviceCode!, res.interval!);
+      if (pollAbortRef.current) return;
+      if (poll?.ok) { onLogin(); }
+      else { setError(poll?.error || 'Falha. Tente novamente.'); setView('main'); }
     } catch {
       setError('Erro ao conectar com GitHub.');
     } finally {
@@ -83,7 +107,7 @@ export default function Login({ onLogin }: LoginProps) {
   }
 
   async function handleGoogle() {
-    if (!googleConfigured) { setShowGoogleSetup(true); return; }
+    if (!googleConfigured) { setView('google-setup'); return; }
     setLoading('google');
     setError('');
     try {
@@ -108,7 +132,7 @@ export default function Login({ onLogin }: LoginProps) {
       const result = await window.api.auth.saveGoogleCreds?.(googleClientId.trim(), googleClientSecret.trim());
       if (result?.ok) {
         setGoogleConfigured(true);
-        setShowGoogleSetup(false);
+        setView('main');
         // Iniciar login imediatamente
         setLoading('google');
         const loginResult = await window.api.auth.loginGoogle();
@@ -161,6 +185,10 @@ export default function Login({ onLogin }: LoginProps) {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
         }
+        @keyframes ghPulse {
+          0%,100%{opacity:.3;transform:scale(1)}
+          50%{opacity:1;transform:scale(1.4)}
+        }
         .login-btn:hover { background: rgba(255,255,255,0.9) !important; transform: translateY(-1px); }
       `}</style>
 
@@ -204,78 +232,65 @@ export default function Login({ onLogin }: LoginProps) {
             Faça login para continuar
           </p>
 
-          {/* Botões */}
+          {/* Conteúdo por view */}
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {!showPat ? (
-              <>
-                <button
-                  className="login-btn"
-                  style={btn(loading === 'github')}
-                  onClick={handleGitHub}
-                  disabled={loading !== null}
-                >
-                  {GITHUB_ICON}
-                  {loading === 'github' ? 'Conectando...' : 'Entrar com GitHub'}
-                </button>
 
-                <button
-                  className="login-btn"
-                  style={btn(loading === 'google')}
-                  onClick={handleGoogle}
-                  disabled={loading !== null}
-                >
-                  {GOOGLE_ICON}
-                  {loading === 'google' ? 'Aguardando Google...' : googleConfigured ? 'Entrar com Google' : 'Configurar Google →'}
-                </button>
+            {/* View principal */}
+            {view === 'main' && (<>
+              <button className="login-btn" style={btn(loading === 'github')} onClick={handleGitHub} disabled={loading !== null}>
+                {GITHUB_ICON}
+                {loading === 'github' ? 'Conectando...' : 'Entrar com GitHub'}
+              </button>
+              <button className="login-btn" style={btn(loading === 'google')} onClick={handleGoogle} disabled={loading !== null}>
+                {GOOGLE_ICON}
+                {loading === 'google' ? 'Aguardando Google...' : googleConfigured ? 'Entrar com Google' : 'Configurar Google →'}
+              </button>
+              <button className="login-btn" style={{ ...btn(false), color: '#72757f', fontSize: 12, padding: '10px 20px' }} onClick={() => { setView('pat'); setError(''); }} disabled={loading !== null}>
+                Usar Personal Access Token →
+              </button>
+            </>)}
 
-                <button
-                  className="login-btn"
-                  style={{ ...btn(false), color: '#72757f', fontSize: 12, padding: '10px 20px' }}
-                  onClick={() => setShowPat(true)}
-                  disabled={loading !== null}
-                >
-                  Usar Personal Access Token →
+            {/* View Device Flow — mostra código XXXX-XXXX */}
+            {view === 'device' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center' }}>
+                <p style={{ fontSize: 12.5, color: '#3a3d45', textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
+                  Insira o código abaixo em <strong>github.com/login/device</strong>
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.7)', borderRadius: 10, padding: '12px 18px', border: '1px solid rgba(255,255,255,0.6)', width: '100%', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 26, letterSpacing: '0.18em', fontFamily: "'JetBrains Mono', monospace", color: '#1a1c20', fontWeight: 600 }}>{userCode}</span>
+                  <button onClick={() => { navigator.clipboard.writeText(userCode); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+                    style={{ background: 'rgba(60,176,67,0.1)', border: '1px solid rgba(60,176,67,0.25)', borderRadius: 6, padding: '4px 10px', fontSize: 11, color: '#3CB043', cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
+                    {copied ? '✓' : 'Copiar'}
+                  </button>
+                </div>
+                <button className="login-btn" style={{ ...btn(false), width: '100%', background: '#1a1c20', color: 'rgba(255,255,255,0.9)', border: 'none' }}
+                  onClick={() => window.api.shell.openExternal(verificationUri)}>
+                  Abrir github.com/login/device
                 </button>
-              </>
-            ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#72757f' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3CB043', flexShrink: 0, animation: 'ghPulse 1.2s ease-in-out infinite', display: 'inline-block' }} />
+                  Aguardando autorização...
+                </div>
+                <button style={{ background: 'none', border: 'none', color: '#a8aab4', fontSize: 12, cursor: 'pointer' }}
+                  onClick={() => { pollAbortRef.current = true; setView('main'); setError(''); }}>
+                  ← Cancelar
+                </button>
+              </div>
+            )}
+
+            {/* View PAT */}
+            {view === 'pat' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <input
-                  style={{
-                    width: '100%', padding: '12px 14px', borderRadius: 11,
-                    border: '1px solid rgba(255,255,255,0.5)',
-                    background: 'rgba(255,255,255,0.7)',
-                    fontSize: 13, fontFamily: "'JetBrains Mono', monospace",
-                    color: '#1a1c20', outline: 'none', boxSizing: 'border-box' as const,
-                    boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
-                  }}
-                  type="password"
-                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                  value={pat}
-                  onChange={(e) => setPat(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handlePat()}
-                  autoFocus
-                />
-                <a
-                  href="#"
-                  style={{ fontSize: 11.5, color: '#3CB043', textDecoration: 'none', textAlign: 'center' as const }}
-                  onClick={(e) => { e.preventDefault(); window.api.shell.openExternal('https://github.com/settings/tokens/new?scopes=repo,user&description=Infinit+Code'); }}
-                >
+                <input style={{ width: '100%', padding: '12px 14px', borderRadius: 11, border: '1px solid rgba(255,255,255,0.5)', background: 'rgba(255,255,255,0.7)', fontSize: 13, fontFamily: "'JetBrains Mono', monospace", color: '#1a1c20', outline: 'none', boxSizing: 'border-box' as const, boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset' }}
+                  type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" value={pat} onChange={(e) => setPat(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handlePat()} autoFocus />
+                <a href="#" style={{ fontSize: 11.5, color: '#3CB043', textDecoration: 'none', textAlign: 'center' as const }}
+                  onClick={(e) => { e.preventDefault(); window.api.shell.openExternal('https://github.com/settings/tokens/new?scopes=repo,user&description=Infinit+Code'); }}>
                   Criar token em github.com/settings/tokens →
                 </a>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    className="login-btn"
-                    style={{ ...btn(false), color: '#72757f', fontSize: 12, flex: '0 0 80px' }}
-                    onClick={() => { setShowPat(false); setError(''); setPat(''); }}
-                  >
-                    ← Voltar
-                  </button>
-                  <button
-                    className="login-btn"
-                    style={{ ...btn(loading === 'pat'), flex: 1, background: 'rgba(60,176,67,0.1)', border: '1px solid rgba(60,176,67,0.25)', color: '#3CB043' }}
-                    onClick={handlePat}
-                    disabled={loading !== null || !pat.trim()}
-                  >
+                  <button className="login-btn" style={{ ...btn(false), color: '#72757f', fontSize: 12, flex: '0 0 80px' }} onClick={() => { setView('main'); setError(''); setPat(''); }}>← Voltar</button>
+                  <button className="login-btn" style={{ ...btn(loading === 'pat'), flex: 1, background: 'rgba(60,176,67,0.1)', border: '1px solid rgba(60,176,67,0.25)', color: '#3CB043' }}
+                    onClick={handlePat} disabled={loading !== null || !pat.trim()}>
                     {loading === 'pat' ? 'Verificando...' : 'Entrar com Token'}
                   </button>
                 </div>
@@ -284,7 +299,7 @@ export default function Login({ onLogin }: LoginProps) {
           </div>
 
           {/* Setup Google OAuth */}
-          {showGoogleSetup && (
+          {view === 'google-setup' && (
             <div style={{
               marginTop: 16, padding: '16px', width: '100%',
               background: 'rgba(255,255,255,0.6)', borderRadius: 12,
@@ -323,7 +338,7 @@ export default function Login({ onLogin }: LoginProps) {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   style={{ ...btn(false), flex: '0 0 80px', color: '#72757f', fontSize: 12 }}
-                  onClick={() => { setShowGoogleSetup(false); setError(''); }}
+                  onClick={() => { setView('main'); setError(''); }}
                 >← Voltar</button>
                 <button
                   style={{ ...btn(loading === 'google-setup'), flex: 1, background: 'rgba(66,133,244,0.1)', border: '1px solid rgba(66,133,244,0.25)', color: '#4285F4' }}

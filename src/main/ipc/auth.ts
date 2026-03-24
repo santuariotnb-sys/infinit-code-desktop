@@ -214,10 +214,9 @@ function googleLoginFlow(): Promise<{ email: string; name: string; avatar: strin
 // ── IPC Handlers ───────────────────────────────────────────────────
 export function registerAuthHandlers(_mainWindow: BrowserWindow): void {
 
-  // Tenta usar token já salvo; se não houver, tenta Device Flow
+  // Verifica token salvo — retorna sessão se válido
   ipcMain.handle('auth:github', async () => {
     try {
-      // 1. Usa token já salvo (do PAT conectado no GitPanel)
       const savedToken = getGhToken() || '';
       if (savedToken) {
         const userRaw = await httpsGet('https://api.github.com/user', savedToken);
@@ -228,14 +227,73 @@ export function registerAuthHandlers(_mainWindow: BrowserWindow): void {
           return { ok: true, ...session };
         }
       }
-      // 2. Sem token salvo — tenta Device Flow
-      const user = await githubLoginFlow();
-      if (!user) return { ok: false, error: 'Login cancelado ou falhou' };
-      store.set('session', { ...user, provider: 'github' });
-      return { ok: true, ...user, provider: 'github' };
+      return { ok: false, error: 'no_token' };
     } catch (e) {
       return { ok: false, error: (e as Error).message };
     }
+  });
+
+  // Device Flow step 1 — retorna código para exibir no renderer
+  ipcMain.handle('auth:github-device-start', async () => {
+    try {
+      const raw = await httpsPost({
+        hostname: 'github.com',
+        path: '/login/device/code',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': 'Infinit-Code-Desktop' },
+      }, `client_id=${GH_CLIENT_ID}&scope=repo%2Cuser`);
+      const data = JSON.parse(raw);
+      if (data.error) return { ok: false, error: data.error_description || data.error };
+      return { ok: true, userCode: data.user_code as string, verificationUri: data.verification_uri as string, deviceCode: data.device_code as string, interval: (data.interval as number) || 5 };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  // Device Flow step 2 — polling até autorizar, salva sessão
+  ipcMain.handle('auth:github-device-poll', (_evt, deviceCode: string, intervalSecs: number) => {
+    return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      let interval = intervalSecs * 1000;
+      const expiresAt = Date.now() + 900_000;
+
+      const poll = async () => {
+        if (Date.now() > expiresAt) { resolve({ ok: false, error: 'Código expirou.' }); return; }
+        try {
+          const raw = await httpsPost({
+            hostname: 'github.com',
+            path: '/login/oauth/access_token',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': 'Infinit-Code-Desktop' },
+          }, `client_id=${GH_CLIENT_ID}&device_code=${deviceCode}&grant_type=urn:ietf:params:oauth:grant-type:device_code`);
+          const data = JSON.parse(raw);
+          if (data.access_token) {
+            saveGhToken(data.access_token);
+            const userRaw = await httpsGet('https://api.github.com/user', data.access_token);
+            const user = JSON.parse(userRaw);
+            let email = user.email || '';
+            if (!email) {
+              try {
+                const emailsRaw = await httpsGet('https://api.github.com/user/emails', data.access_token);
+                const emails: { email: string; primary: boolean; verified: boolean }[] = JSON.parse(emailsRaw);
+                email = emails.find(e => e.primary && e.verified)?.email || emails[0]?.email || user.login;
+              } catch { /* sem emails */ }
+            }
+            const session = { email, name: user.name || user.login, avatar: user.avatar_url || '', provider: 'github' as const };
+            store.set('session', session);
+            resolve({ ok: true, ...session });
+          } else if (data.error === 'slow_down') {
+            interval += 5000; setTimeout(poll, interval);
+          } else if (data.error === 'authorization_pending') {
+            setTimeout(poll, interval);
+          } else if (data.error === 'expired_token') {
+            resolve({ ok: false, error: 'Código expirou. Tente novamente.' });
+          } else if (data.error === 'access_denied') {
+            resolve({ ok: false, error: 'Acesso negado.' });
+          } else {
+            setTimeout(poll, interval);
+          }
+        } catch { setTimeout(poll, interval); }
+      };
+      setTimeout(poll, interval);
+    });
   });
 
   // Login via PAT — salva token e cria sessão

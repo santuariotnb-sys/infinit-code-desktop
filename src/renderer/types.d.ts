@@ -86,6 +86,8 @@ interface ElectronAPI {
   };
   auth: {
     loginGithub: () => Promise<{ ok: boolean; email?: string; name?: string; avatar?: string; provider?: string; error?: string }>;
+    githubDeviceStart: () => Promise<{ ok: boolean; userCode?: string; verificationUri?: string; deviceCode?: string; interval?: number; error?: string }>;
+    githubDevicePoll: (deviceCode: string, interval: number) => Promise<{ ok: boolean; error?: string }>;
     loginGithubPat: (token: string) => Promise<{ ok: boolean; email?: string; name?: string; avatar?: string; error?: string }>;
     loginGoogle: () => Promise<{ ok: boolean; email?: string; name?: string; avatar?: string; provider?: string; error?: string }>;
     saveGoogleCreds: (clientId: string, clientSecret: string) => Promise<{ ok: boolean; error?: string }>;
