@@ -35,11 +35,13 @@ interface ElectronAPI {
     writeVoiceSettings: () => Promise<{ ok: boolean }>;
     onInstallProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
     onAuthenticated: (cb: () => void) => () => void;
-    status?: () => Promise<{ installed: boolean; version?: string }>;
-    ask?: (opts: { prompt: string; cwd?: string; sessionId?: string }) => Promise<{ sessionId?: string; cost_usd?: number }>;
+    status?: () => Promise<{ installed: boolean; version: string | null }>;
+    ask?: (payload: { prompt: string; cwd: string; sessionId?: string }) =>
+      Promise<{ ok: boolean; sessionId: string | null; cost_usd: number; chunks: object[] }>;
+    clearSession?: () => Promise<{ ok: boolean }>;
     onChunk?: (cb: (data: { text: string }) => void) => () => void;
-    onTool?: (cb: (data: unknown) => void) => () => void;
-    clearSession?: () => Promise<void>;
+    onTool?: (cb: (data: { name: string; input: unknown }) => void) => () => void;
+    onError?: (cb: (data: { message: string }) => void) => () => void;
   };
   github: {
     checkInstalled: () => Promise<{ installed: boolean; version?: string }>;

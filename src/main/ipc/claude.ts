@@ -1,8 +1,11 @@
 import { ipcMain, BrowserWindow, shell } from 'electron';
-import { execSync, exec } from 'child_process';
+import { execSync, exec, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+// Guarda session_id por janela para memória contínua
+const sessions = new Map<number, string>();
 
 export function registerClaudeHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('claude:check-installed', () => {
@@ -261,5 +264,123 @@ Ao revisar e escrever código:
     } catch {
       return { ok: false };
     }
+  });
+
+  // ── Headless ask — sessão contínua ───────────────────────
+  ipcMain.handle('claude:ask', async (event, payload: {
+    prompt: string;
+    cwd: string;
+    sessionId?: string;
+  }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const winId = win?.id ?? 0;
+
+    const existingSession = payload.sessionId ?? sessions.get(winId);
+
+    const args = [
+      '-p', payload.prompt,
+      '--output-format', 'stream-json',
+      '--bare',
+      '--dangerously-skip-permissions',
+      '--max-turns', '3',
+    ];
+
+    if (existingSession) {
+      args.push('--resume', existingSession);
+    }
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn('claude', args, {
+        cwd: payload.cwd,
+        env: { ...process.env },
+      });
+
+      let newSessionId: string | null = null;
+      let totalCost = 0;
+      const chunks: object[] = [];
+
+      const timeout = setTimeout(() => {
+        proc.kill('SIGTERM');
+        reject(new Error('timeout: Claude demorou mais de 90s'));
+      }, 90_000);
+
+      proc.stdout.on('data', (data: Buffer) => {
+        const lines = data.toString().split('\n').filter(Boolean);
+        for (const line of lines) {
+          try {
+            const json = JSON.parse(line);
+            chunks.push(json);
+
+            if (json.session_id) {
+              newSessionId = json.session_id;
+            }
+
+            if (json.cost_usd) {
+              totalCost = json.cost_usd;
+            }
+
+            if (
+              json.type === 'stream_event' &&
+              json.event?.delta?.type === 'text_delta'
+            ) {
+              event.sender.send('claude:chunk', { text: json.event.delta.text });
+            }
+
+            if (json.type === 'tool_use' && json.name) {
+              event.sender.send('claude:tool', { name: json.name, input: json.input });
+            }
+          } catch {
+            // linha não é JSON válido — ignora
+          }
+        }
+      });
+
+      proc.stderr.on('data', (data: Buffer) => {
+        const text = data.toString();
+        if (text.includes('Error') || text.includes('error')) {
+          event.sender.send('claude:error', { message: text });
+        }
+      });
+
+      proc.on('close', (code) => {
+        clearTimeout(timeout);
+        if (newSessionId) {
+          sessions.set(winId, newSessionId);
+        }
+        resolve({
+          ok: code === 0,
+          sessionId: newSessionId,
+          cost_usd: totalCost,
+          chunks,
+        });
+      });
+
+      proc.on('error', (err) => {
+        clearTimeout(timeout);
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          reject(new Error('Claude Code não encontrado. Rode o setup primeiro.'));
+        } else {
+          reject(err);
+        }
+      });
+    });
+  });
+
+  // ── Limpa sessão ─────────────────────────────────────────
+  ipcMain.handle('claude:clear-session', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) sessions.delete(win.id);
+    return { ok: true };
+  });
+
+  // ── Status do Claude Code ────────────────────────────────
+  ipcMain.handle('claude:status', async () => {
+    return new Promise((resolve) => {
+      const proc = spawn('claude', ['--version'], { timeout: 5000 });
+      let version = '';
+      proc.stdout.on('data', (d: Buffer) => (version += d.toString()));
+      proc.on('close', (code) => resolve({ installed: code === 0, version: version.trim() }));
+      proc.on('error', () => resolve({ installed: false, version: null }));
+    });
   });
 }

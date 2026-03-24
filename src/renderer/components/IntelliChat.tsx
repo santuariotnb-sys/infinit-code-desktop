@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { basename } from '../utils/path';
+import { buildPrompt, estimateTokens, tokenColor, ChatContext } from '../lib/buildPrompt';
 
 export interface IntelliChatProps {
   projectPath: string | null;
@@ -11,7 +12,7 @@ export interface IntelliChatProps {
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
 }
 
@@ -58,18 +59,6 @@ function parseActionCards(output: string): ActionCard[] {
   return cards.filter((c) => { if (seen.has(c.id)) return false; seen.add(c.id); return true; }).slice(0, 5);
 }
 
-function buildContext(msg: string, activeFile: { path: string; content: string } | null, terminalOutput: string): string {
-  let ctx = msg;
-  if (activeFile) {
-    const lines = activeFile.content.split('\n').slice(0, 100).join('\n');
-    ctx += `\n\n<file name="${basename(activeFile.path)}">\n${lines}\n</file>`;
-  }
-  const recentOut = terminalOutput.split('\n').slice(-10).join('\n');
-  if (/error:|Error:/i.test(recentOut)) {
-    ctx += `\n\n<terminal_errors>\n${recentOut}\n</terminal_errors>`;
-  }
-  return ctx;
-}
 
 const QUICK_ACTIONS = [
   { label: 'Criar projeto', icon: '⬡', inject: 'claude --dangerously-skip-permissions\r', delay: 'Crie um projeto Next.js 14 com TypeScript, Tailwind CSS e Supabase. Configure autenticação com Google OAuth. Crie uma landing page moderna com hero, features e pricing.\r' },
@@ -85,7 +74,10 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [attached, setAttached] = useState<AttachedFile[]>([]);
-  const [claudeStatus, setClaudeStatus] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
+  const [claudeStatus, setClaudeStatus] = useState<'checking' | 'ready' | 'offline' | 'thinking'>('checking');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState('');
+  const [lastCost, setLastCost] = useState<number | null>(null);
   const [actionCards, setActionCards] = useState<ActionCard[]>([]);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionFiles, setMentionFiles] = useState<string[]>([]);
@@ -96,29 +88,28 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
   const messagesEnd = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamingRef = useRef('');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
-  // Auto-scroll
-  useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
-  // Detect Claude working / done from terminal output
+  // Verifica se Claude Code está instalado ao montar
   useEffect(() => {
-    const lines = terminalOutput.split('\n').slice(-8).join('\n');
-    // Claude Code working: spinner chars, tool calls, writing files
-    if (/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]|Bash\(|Read\(|Write\(|Edit\(|Glob\(|Grep\(|running tool|writing|editing|analyzing/i.test(lines)) {
-      setClaudeStatus('working');
-    } else if (/✓\s*(Completed|Done|Finished)|^>\s*$/m.test(lines) || /\$\s*$/.test(lines.slice(-80))) {
-      // Claude returned prompt — done
-      setClaudeStatus('done');
-      if (statusTimer.current) clearTimeout(statusTimer.current);
-      statusTimer.current = setTimeout(() => setClaudeStatus('idle'), 3000);
-    } else if (/error:|Error:|✗|failed|FAILED/i.test(lines)) {
-      setClaudeStatus('error');
-    }
-    // Parse action cards
+    window.api.claude.status?.().then((s) => {
+      setClaudeStatus(s.installed ? 'ready' : 'offline');
+    }).catch(() => setClaudeStatus('offline'));
+  }, []);
+
+  // Auto-scroll
+  useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, streamingText]);
+
+  // Parse action cards from terminal output
+  useEffect(() => {
     setActionCards(parseActionCards(terminalOutput));
+    // Detecta Claude ativo no terminal
+    const lastLines = terminalOutput.split('\n').slice(-5).join('\n');
+    if (lastLines.includes('claude>') || lastLines.includes('Claude Code')) {
+      setClaudeStatus((prev) => prev === 'offline' ? 'ready' : prev);
+    }
   }, [terminalOutput]);
 
   // Contextual suggestions based on active file + terminal
@@ -196,27 +187,93 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
     rec.start();
   }
 
-  function send(text?: string) {
+  async function send(text?: string) {
     const msg = (text || input).trim();
     if (!msg) return;
 
-    // Build context
-    let fullContext = buildContext(msg, activeFile, terminalOutput);
+    if (claudeStatus === 'offline') {
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        role: 'system',
+        content: 'Claude Code não encontrado. Inicie no terminal primeiro.',
+      }]);
+      return;
+    }
 
-    // Append attachments
+    const ctx: ChatContext = {
+      cwd: projectPath ?? (typeof process !== 'undefined' ? process.env.HOME ?? '~' : '~'),
+      activeFile: activeFile?.path,
+      activeFileContent: activeFile?.content,
+      terminalOutput: terminalOutput.split('\n').slice(-30).join('\n'),
+      history: messages
+        .filter((m) => m.role !== 'system')
+        .slice(-6)
+        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    };
+
+    // Inclui attachments no prompt
+    let prompt = buildPrompt(msg, ctx);
     for (const f of attached) {
       if (f.type === 'screenshot') {
-        fullContext += `\n\n<screenshot>${f.content}</screenshot>`;
+        prompt += `\n\n<screenshot>${f.content}</screenshot>`;
       } else {
-        fullContext += `\n\n<file name="${f.name}">\n${f.content}\n</file>`;
+        prompt += `\n\n<file name="${f.name}">\n${f.content}\n</file>`;
       }
     }
 
     setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'user', content: msg }]);
     setAttached([]);
     setInput('');
+    setClaudeStatus('thinking');
+    streamingRef.current = '';
+    setStreamingText('');
 
-    onTerminalInject(fullContext + '\r');
+    const removeChunk = window.api.claude.onChunk?.((data) => {
+      streamingRef.current += data.text;
+      setStreamingText(streamingRef.current);
+    }) ?? (() => {});
+
+    const removeTool = window.api.claude.onTool?.(() => {}) ?? (() => {});
+
+    try {
+      const result = await window.api.claude.ask?.({
+        prompt,
+        cwd: ctx.cwd,
+        sessionId: sessionId ?? undefined,
+      });
+
+      if (result?.sessionId) setSessionId(result.sessionId);
+      if (result?.cost_usd) setLastCost(result.cost_usd);
+
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: streamingRef.current || 'Pronto.',
+      }]);
+      streamingRef.current = '';
+      setStreamingText('');
+      setClaudeStatus('ready');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido';
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        role: 'system',
+        content: `Erro: ${message}`,
+      }]);
+      setClaudeStatus(message.includes('não encontrado') ? 'offline' : 'ready');
+    } finally {
+      removeChunk();
+      removeTool();
+    }
+  }
+
+  async function clearConversation() {
+    await window.api.claude.clearSession?.();
+    setSessionId(null);
+    setMessages([]);
+    setLastCost(null);
+    streamingRef.current = '';
+    setStreamingText('');
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -324,17 +381,31 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
       <div style={styles.header}>
         <span style={styles.headerIcon}>∞</span>
         <span style={styles.headerTitle}>IntelliChat</span>
-        <span style={styles.projectBadge}>{projectPath ? basename(projectPath) : 'sem projeto'}</span>
-      </div>
-
-      {/* Claude status bar */}
-      {claudeStatus !== 'idle' && (
-        <div style={{ ...styles.statusBar, ...(claudeStatus === 'error' ? styles.statusBarError : claudeStatus === 'done' ? styles.statusBarDone : {}) }}>
-          {claudeStatus === 'working' && '⟳ Claude está trabalhando...'}
-          {claudeStatus === 'done' && '✓ Pronto'}
-          {claudeStatus === 'error' && '⚠ Erro detectado'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: claudeStatus === 'ready' ? '#3CB043' : claudeStatus === 'thinking' ? '#f0a020' : claudeStatus === 'offline' ? '#d93030' : '#a8aab4',
+            flexShrink: 0,
+          }} />
+          <span style={{ fontSize: 10, color: '#555', fontFamily: 'monospace' }}>
+            {claudeStatus === 'checking' ? 'Verificando...' : claudeStatus === 'ready' ? 'pronto' : claudeStatus === 'thinking' ? 'pensando...' : 'offline'}
+          </span>
+          {claudeStatus === 'offline' && (
+            <button
+              onClick={() => onTerminalInject('claude --dangerously-skip-permissions\r')}
+              style={{ fontSize: 9, color: '#3CB043', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              iniciar →
+            </button>
+          )}
         </div>
-      )}
+        <span style={styles.projectBadge}>{projectPath ? basename(projectPath) : 'sem projeto'}</span>
+        {messages.length > 0 && (
+          <button onClick={clearConversation} style={styles.clearBtn} title="Nova conversa">↺</button>
+        )}
+      </div>
 
       {/* Messages / empty state */}
       <div style={styles.messages}>
@@ -353,10 +424,18 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
           </div>
         ) : (
           messages.map((m) => (
-            <div key={m.id} style={{ ...styles.message, ...(m.role === 'user' ? styles.userMsg : styles.asstMsg) }}>
+            <div key={m.id} style={{ ...styles.message, ...(m.role === 'user' ? styles.userMsg : m.role === 'system' ? styles.systemMsg : styles.asstMsg) }}>
               {m.content}
             </div>
           ))
+        )}
+
+        {/* Streaming — resposta em andamento */}
+        {streamingText && (
+          <div style={{ ...styles.message, ...styles.asstMsg, opacity: 0.8 }}>
+            {streamingText}
+            <span style={{ opacity: 0.4 }}>▊</span>
+          </div>
         )}
 
         {/* Action cards from terminal */}
@@ -412,6 +491,33 @@ export default function IntelliChat({ projectPath, activeFile, onTerminalInject,
               📄 {basename(f)}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Token count + custo */}
+      {input && (
+        <div style={styles.tokenBar}>
+          {(() => {
+            const ctx: ChatContext = {
+              cwd: projectPath ?? '~',
+              activeFile: activeFile?.path,
+              activeFileContent: activeFile?.content,
+              terminalOutput: terminalOutput.split('\n').slice(-10).join('\n'),
+              history: messages.filter(m => m.role !== 'system').slice(-4).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+            };
+            const tokens = estimateTokens(buildPrompt(input, ctx));
+            const color = tokenColor(tokens);
+            return (
+              <>
+                <span style={{ color: color === 'green' ? '#3CB043' : color === 'yellow' ? '#f0a020' : '#d93030' }}>
+                  ~{tokens.toLocaleString()} tokens
+                </span>
+                {lastCost && (
+                  <span style={{ color: '#555' }}>última: ~${lastCost.toFixed(3)}</span>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -495,4 +601,7 @@ const styles: Record<string, React.CSSProperties> = {
   inputRow: { display: 'flex', gap: 6, padding: '8px 10px', alignItems: 'flex-end' },
   textarea: { flex: 1, background: '#0d0d0d', border: '1px solid #2a2a2a', borderRadius: 6, padding: '8px 10px', color: '#fff', fontSize: 12, resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.4 },
   sendBtn: { width: 34, height: 34, borderRadius: 6, background: '#00ff88', color: '#0a0a0a', border: 'none', fontSize: 18, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  systemMsg: { background: 'rgba(255,60,60,0.08)', color: '#ff8888', alignSelf: 'center', fontSize: 11, fontStyle: 'italic', borderRadius: 4, padding: '4px 8px' },
+  clearBtn: { background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 14, padding: '2px 4px', lineHeight: 1 },
+  tokenBar: { display: 'flex', justifyContent: 'space-between', padding: '2px 14px 4px', fontSize: 10, fontFamily: 'monospace', borderTop: '1px solid #1a1a1a', flexShrink: 0 },
 };

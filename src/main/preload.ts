@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('api', {
     voiceStatus: () => ipcRenderer.invoke('claude:voice-status'),
     voiceStart: () => ipcRenderer.invoke('claude:voice-start'),
     writeVoiceSettings: () => ipcRenderer.invoke('claude:write-voice-settings'),
+    ask: (payload: { prompt: string; cwd: string; sessionId?: string }) =>
+      ipcRenderer.invoke('claude:ask', payload),
+    clearSession: () => ipcRenderer.invoke('claude:clear-session'),
+    status: () => ipcRenderer.invoke('claude:status'),
     onInstallProgress: (cb: (data: { pct: number; msg: string }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, d: { pct: number; msg: string }) => cb(d);
       ipcRenderer.on('claude:install-progress', handler);
@@ -51,6 +55,21 @@ contextBridge.exposeInMainWorld('api', {
       const handler = () => cb();
       ipcRenderer.on('claude:authenticated', handler);
       return () => ipcRenderer.removeListener('claude:authenticated', handler);
+    },
+    onChunk: (cb: (data: { text: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, data: { text: string }) => cb(data);
+      ipcRenderer.on('claude:chunk', handler);
+      return () => ipcRenderer.removeListener('claude:chunk', handler);
+    },
+    onTool: (cb: (data: { name: string; input: unknown }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, data: { name: string; input: unknown }) => cb(data);
+      ipcRenderer.on('claude:tool', handler);
+      return () => ipcRenderer.removeListener('claude:tool', handler);
+    },
+    onError: (cb: (data: { message: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, data: { message: string }) => cb(data);
+      ipcRenderer.on('claude:error', handler);
+      return () => ipcRenderer.removeListener('claude:error', handler);
     },
   },
 
