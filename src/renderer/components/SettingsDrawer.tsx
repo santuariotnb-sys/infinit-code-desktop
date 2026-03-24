@@ -1,59 +1,52 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Settings } from '../hooks/useSettings';
 
 interface SettingsDrawerProps {
   open: boolean;
   onClose: () => void;
+  settings: Settings;
+  onUpdate: (key: keyof Settings, value: boolean | number) => void;
 }
 
-interface ToggleSetting {
-  id: string;
+interface SettingItem {
+  key: keyof Settings;
   label: string;
-  value?: string;
-  defaultOn: boolean;
+  hint?: string;
   isPort?: boolean;
 }
 
 interface SettingsGroup {
   title: string;
-  items: ToggleSetting[];
+  items: SettingItem[];
 }
 
 const GROUPS: SettingsGroup[] = [
   {
     title: 'Editor',
     items: [
-      { id: 'autosave',  label: 'Auto-save',  value: '500ms', defaultOn: true },
-      { id: 'wordwrap',  label: 'Word wrap',                  defaultOn: false },
-      { id: 'minimap',   label: 'Minimap',                    defaultOn: true },
+      { key: 'autoSave', label: 'Auto-save', hint: '500ms' },
+      { key: 'wordWrap', label: 'Word wrap' },
+      { key: 'minimap', label: 'Minimap' },
     ],
   },
   {
     title: 'Claude Code',
     items: [
-      { id: 'autostart', label: 'Auto-start',        defaultOn: true },
-      { id: 'voice',     label: 'Voz PT-BR',          defaultOn: true },
-      { id: 'skills',    label: 'Skills automáticas', defaultOn: true },
+      { key: 'claudeAutoStart', label: 'Auto-start' },
+      { key: 'voicePtBr', label: 'Voz PT-BR' },
+      { key: 'autoSkills', label: 'Skills automáticas' },
     ],
   },
   {
     title: 'Preview',
     items: [
-      { id: 'autoreload', label: 'Auto-reload',   defaultOn: true },
-      { id: 'port',       label: 'Porta padrão', value: '3000', defaultOn: true, isPort: true },
+      { key: 'previewAutoReload', label: 'Auto-reload' },
+      { key: 'defaultPort', label: 'Porta padrão', isPort: true },
     ],
   },
 ];
 
-export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
-  const initialState: Record<string, boolean> = {};
-  GROUPS.forEach((g) => g.items.forEach((item) => { initialState[item.id] = item.defaultOn; }));
-  const [toggles, setToggles] = useState<Record<string, boolean>>(initialState);
-
-  function handleToggle(id: string, isPort?: boolean) {
-    if (isPort) return; // port is read-only
-    setToggles((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
-
+export default function SettingsDrawer({ open, onClose, settings, onUpdate }: SettingsDrawerProps) {
   const togStyle = (on: boolean): React.CSSProperties => ({
     width: 34,
     height: 18,
@@ -66,7 +59,6 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
   });
 
   const togKnob = (on: boolean): React.CSSProperties => ({
-    content: '',
     position: 'absolute',
     width: 12,
     height: 12,
@@ -150,12 +142,49 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
               {group.title}
             </div>
             {group.items.map((item) => {
-              const isOn = toggles[item.id];
-              const clickable = !item.isPort;
+              if (item.isPort) {
+                return (
+                  <div
+                    key={item.key}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '9px 11px',
+                      borderRadius: 8,
+                      background: 'rgba(255,255,255,0.5)',
+                      marginBottom: 4,
+                      boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
+                    }}
+                  >
+                    <div style={{ flex: 1, fontSize: 12.5, color: '#3a3d45', fontWeight: 300 }}>
+                      {item.label}
+                    </div>
+                    <input
+                      type="number"
+                      value={settings[item.key] as number}
+                      onChange={(e) => onUpdate(item.key, parseInt(e.target.value, 10) || 3000)}
+                      style={{
+                        width: 64,
+                        background: 'rgba(255,255,255,0.7)',
+                        border: '1px solid rgba(0,0,0,0.1)',
+                        borderRadius: 5,
+                        padding: '3px 7px',
+                        fontSize: 11,
+                        fontFamily: "'JetBrains Mono', monospace",
+                        color: '#3a3d45',
+                        outline: 'none',
+                        textAlign: 'right',
+                      }}
+                    />
+                  </div>
+                );
+              }
+
+              const isOn = settings[item.key] as boolean;
               return (
                 <div
-                  key={item.id}
-                  onClick={() => clickable && handleToggle(item.id, item.isPort)}
+                  key={item.key}
+                  onClick={() => onUpdate(item.key, !isOn)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -164,27 +193,21 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
                     background: 'rgba(255,255,255,0.5)',
                     marginBottom: 4,
                     boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
-                    cursor: clickable ? 'pointer' : 'default',
+                    cursor: 'pointer',
                     transition: 'all .12s',
                   }}
                 >
                   <div style={{ flex: 1, fontSize: 12.5, color: '#3a3d45', fontWeight: 300 }}>
                     {item.label}
                   </div>
-                  {item.value && !item.isPort && (
+                  {item.hint && (
                     <div style={{ fontSize: 10, color: '#a8aab4', fontFamily: "'JetBrains Mono', monospace", marginRight: 7 }}>
-                      {item.value}
+                      {item.hint}
                     </div>
                   )}
-                  {item.isPort ? (
-                    <div style={{ fontSize: 10, color: '#a8aab4', fontFamily: "'JetBrains Mono', monospace" }}>
-                      {item.value}
-                    </div>
-                  ) : (
-                    <div style={togStyle(isOn)}>
-                      <div style={togKnob(isOn)} />
-                    </div>
-                  )}
+                  <div style={togStyle(isOn)}>
+                    <div style={togKnob(isOn)} />
+                  </div>
                 </div>
               );
             })}

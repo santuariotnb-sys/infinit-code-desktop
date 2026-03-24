@@ -13,6 +13,7 @@ export function useFileManager() {
   const [openFile, setOpenFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [isModified, setIsModified] = useState(false);
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
 
   const loadFiles = useCallback(async (dir: string) => {
     const result = await window.api.files.readDir(dir);
@@ -41,6 +42,7 @@ export function useFileManager() {
     setOpenFile(null);
     setFileContent('');
     setIsModified(false);
+    setOpenTabs([]);
   }
 
   async function handleOpenFolder() {
@@ -55,9 +57,28 @@ export function useFileManager() {
       setOpenFile(filePath);
       setFileContent(result.data);
       setIsModified(false);
+      setOpenTabs((prev) => prev.includes(filePath) ? prev : [...prev, filePath]);
     } else {
       console.error('[useFileManager] read falhou:', result?.error);
     }
+  }
+
+  async function closeTab(filePath: string) {
+    setOpenTabs((prev) => {
+      const next = prev.filter((p) => p !== filePath);
+      if (openFile === filePath) {
+        const idx = prev.indexOf(filePath);
+        const newActive = next[Math.max(0, idx - 1)] ?? next[0] ?? null;
+        if (newActive) {
+          handleSelectFile(newActive);
+        } else {
+          setOpenFile(null);
+          setFileContent('');
+          setIsModified(false);
+        }
+      }
+      return next;
+    });
   }
 
   async function handleSave() {
@@ -84,10 +105,12 @@ export function useFileManager() {
     openFile,
     fileContent,
     isModified,
+    openTabs,
     openProject,
     handleOpenFolder,
     handleSelectFile,
     handleSave,
     handleContentChange,
+    closeTab,
   };
 }

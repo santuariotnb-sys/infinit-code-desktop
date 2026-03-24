@@ -20,7 +20,9 @@ import { useGitPanel } from '../hooks/useGitPanel';
 import { useGitHub } from '../hooks/useGitHub';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useToast } from '../hooks/useToast';
+import { useSettings } from '../hooks/useSettings';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import TabBar from '../components/TabBar';
 
 const NOISE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E")`;
 
@@ -40,6 +42,7 @@ export default function IDE() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const { toast, showToast: _showToast } = useToast();
+  const { settings, updateSetting } = useSettings();
 
   useKeyboardShortcuts({
     onSave: fileManager.handleSave,
@@ -149,6 +152,15 @@ export default function IDE() {
         )}
 
         <div style={styles.editorArea}>
+          {fileManager.openTabs.length > 0 && (
+            <TabBar
+              tabs={fileManager.openTabs}
+              activeTab={fileManager.openFile || ''}
+              onSelect={fileManager.handleSelectFile}
+              onClose={fileManager.closeTab}
+              isModified={fileManager.isModified}
+            />
+          )}
           <div style={styles.editorPane}>
             {fileManager.openFile ? (
               <ErrorBoundary name="Editor">
@@ -258,17 +270,6 @@ export default function IDE() {
           </div>
         )}
 
-        {panels.showGit && (
-          <div style={{ ...styles.panel, width: 280 }}>
-            <ErrorBoundary name="GitPanel">
-              <GitPanel
-                projectPath={fileManager.projectPath}
-                onSyncProgress={(msg) => terminal.appendOutput(`[git] ${msg}`)}
-              />
-            </ErrorBoundary>
-          </div>
-        )}
-
         {panels.showChat && (
           <div style={{ ...styles.panel, width: CHAT_WIDTH, display: 'flex', flexDirection: 'row' }}>
           <div
@@ -353,7 +354,20 @@ export default function IDE() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenFolder={fileManager.handleOpenFolder}
       />
-      <SettingsDrawer open={showSettings} onClose={() => setShowSettings(false)} />
+      <SettingsDrawer
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        settings={settings}
+        onUpdate={updateSetting}
+      />
+      <ErrorBoundary name="GitPanel">
+        <GitPanel
+          open={panels.showGit}
+          onClose={panels.toggleGit}
+          projectPath={fileManager.projectPath}
+          onSyncProgress={(msg) => terminal.appendOutput(`[git] ${msg}`)}
+        />
+      </ErrorBoundary>
       <GitHubAuthModal
         open={github.showAuthModal}
         onClose={() => github.setShowAuthModal(false)}

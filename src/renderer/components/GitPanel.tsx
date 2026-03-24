@@ -5,13 +5,21 @@ import { useGitOperations } from '../hooks/useGitOperations';
 interface GitPanelProps {
   projectPath: string | null;
   onSyncProgress?: (msg: string) => void;
+  open: boolean;
+  onClose: () => void;
 }
 
-const STATUS_ICON: Record<string, string> = {
-  M: '●', A: '+', D: '−', '?': '?', R: '→', C: '⇒', U: '!',
+const STATUS_BADGE: Record<string, { label: string; color: string }> = {
+  M: { label: 'M', color: '#f0a020' },
+  A: { label: 'A', color: '#3CB043' },
+  D: { label: 'D', color: '#d93030' },
+  '?': { label: '?', color: '#888' },
+  R: { label: 'R', color: '#6080d0' },
+  C: { label: 'C', color: '#6080d0' },
+  U: { label: 'U', color: '#d93030' },
 };
 
-export default function GitPanel({ projectPath, onSyncProgress }: GitPanelProps) {
+export default function GitPanel({ projectPath, onSyncProgress, open, onClose }: GitPanelProps) {
   const [commitMsg, setCommitMsg] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [showBranchInput, setShowBranchInput] = useState(false);
@@ -20,132 +28,436 @@ export default function GitPanel({ projectPath, onSyncProgress }: GitPanelProps)
   const ops = useGitOperations({ projectPath, branch, onProgress: onSyncProgress, onRefresh: refreshStatus });
 
   return (
-    <div style={styles.container}>
+    <div
+      style={{
+        position: 'fixed',
+        top: 44,
+        right: 0,
+        bottom: 22,
+        width: 348,
+        zIndex: 200,
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'rgba(218,221,228,0.95)',
+        backdropFilter: 'blur(28px)',
+        WebkitBackdropFilter: 'blur(28px)',
+        borderLeft: '1px solid rgba(255,255,255,0.55)',
+        transform: open ? 'translateX(0)' : 'translateX(100%)',
+        transition: 'transform 0.22s cubic-bezier(.22,1,.36,1)',
+        pointerEvents: open ? 'all' : 'none',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header */}
       <div style={styles.header}>
-        <span style={styles.icon}>⑂</span>
-        <span style={styles.title}>
-          GitHub {ops.connected ? <span style={styles.username}>● {ops.username}</span> : null}
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="#72757f">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        <span style={styles.headerTitle}>
+          GitHub
+          {ops.connected && ops.username && (
+            <span style={styles.username}> · {ops.username}</span>
+          )}
         </span>
-        {ops.connected && (
-          <button style={styles.disconnectBtn} onClick={ops.handleDisconnect} title="Desconectar">×</button>
-        )}
+        <button style={styles.closeBtn} onClick={onClose} title="Fechar">✕</button>
       </div>
 
-      {!ops.connected ? (
-        <div style={styles.connectArea}>
-          <button style={styles.connectBtn} onClick={ops.handleConnect} disabled={ops.loading}>
-            {ops.loading ? 'Conectando...' : 'Conectar com GitHub →'}
-          </button>
-          <p style={styles.connectHint}>Necessário para sync com Lovable</p>
-        </div>
-      ) : (
-        <div style={styles.body}>
-          {/* Branch selector */}
-          <div style={styles.row}>
-            <span style={styles.label}>Branch</span>
-            <select style={styles.branchSelect} value={branch} onChange={(e) => setBranch(e.target.value)}>
-              {branches.map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-            <button style={styles.smallBtn} onClick={() => setShowBranchInput(!showBranchInput)} title="Nova branch">+</button>
-          </div>
-
-          {showBranchInput && (
-            <div style={styles.row}>
-              <input
-                style={styles.branchInput}
-                value={newBranchName}
-                onChange={(e) => setNewBranchName(e.target.value)}
-                placeholder="nome-da-branch"
-                onKeyDown={(e) => e.key === 'Enter' && ops.handleCreateBranch(newBranchName, () => { setNewBranchName(''); setShowBranchInput(false); })}
-              />
-              <button style={styles.smallBtn} onClick={() => ops.handleCreateBranch(newBranchName, () => { setNewBranchName(''); setShowBranchInput(false); })}>✓</button>
-            </div>
-          )}
-
-          {changes.length > 0 && (
-            <div style={styles.changeBadge}>
-              {changes.length} mudança{changes.length !== 1 ? 's' : ''} local{changes.length !== 1 ? 'is' : ''}
-              {localChangeCount > 0 && <span style={styles.watchBadge}> +{localChangeCount} salvas</span>}
-            </div>
-          )}
-
-          <div style={styles.actions}>
-            <button style={styles.actionBtn} onClick={ops.handlePull} disabled={ops.loading}>↓ Pull</button>
-            <button style={styles.actionBtn} onClick={ops.handlePush} disabled={ops.loading}>↑ Push</button>
-            <button style={{ ...styles.actionBtn, ...styles.syncBtn }} onClick={ops.handleSync} disabled={ops.loading}>
-              {ops.loading ? '⟳' : '⟳ Sync'}
-            </button>
-          </div>
-
-          {changes.length > 0 && (
-            <div style={styles.fileList}>
-              {changes.slice(0, 15).map((c, i) => (
-                <div key={i} style={styles.fileItem}>
-                  <span style={{ ...styles.fileStatus, color: c.status === '?' ? '#888' : c.status === 'D' ? '#ff6060' : '#00ff88' }}>
-                    {STATUS_ICON[c.status] || c.status}
-                  </span>
-                  <span style={styles.fileName}>{c.file}</span>
-                </div>
-              ))}
-              {changes.length > 15 && <div style={styles.moreFiles}>+{changes.length - 15} mais</div>}
-            </div>
-          )}
-
-          <div style={styles.commitArea}>
-            <input
-              style={styles.commitInput}
-              value={commitMsg}
-              onChange={(e) => setCommitMsg(e.target.value)}
-              placeholder="Mensagem do commit..."
-              onKeyDown={(e) => e.key === 'Enter' && ops.handleCommit(commitMsg, () => setCommitMsg(''))}
-            />
-            <button
-              style={{ ...styles.commitBtn, opacity: commitMsg.trim() ? 1 : 0.4 }}
-              onClick={() => ops.handleCommit(commitMsg, () => setCommitMsg(''))}
-              disabled={!commitMsg.trim() || ops.loading}
-            >✓</button>
-          </div>
-
-          <button style={styles.lovableBtn} onClick={ops.handleSyncWithLovable} disabled={ops.loading}>
-            Sync com Lovable →
-          </button>
-
-          {ops.syncLog.trim() && <pre style={styles.syncLog}>{ops.syncLog.trim()}</pre>}
+      {/* Branch info */}
+      {ops.connected && (
+        <div style={styles.branchRow}>
+          <span style={styles.branchIcon}>⑂</span>
+          <select
+            style={styles.branchSelect}
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+          >
+            {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+          <button
+            style={styles.smallBtn}
+            onClick={() => setShowBranchInput(!showBranchInput)}
+            title="Nova branch"
+          >+</button>
         </div>
       )}
+
+      {showBranchInput && (
+        <div style={{ ...styles.branchRow, padding: '4px 12px' }}>
+          <input
+            style={styles.branchInput}
+            value={newBranchName}
+            onChange={(e) => setNewBranchName(e.target.value)}
+            placeholder="nome-da-branch"
+            onKeyDown={(e) => e.key === 'Enter' && ops.handleCreateBranch(newBranchName, () => { setNewBranchName(''); setShowBranchInput(false); })}
+          />
+          <button
+            style={styles.smallBtn}
+            onClick={() => ops.handleCreateBranch(newBranchName, () => { setNewBranchName(''); setShowBranchInput(false); })}
+          >✓</button>
+        </div>
+      )}
+
+      <div style={styles.body}>
+        {!ops.connected ? (
+          <div style={styles.connectArea}>
+            <button style={styles.connectBtn} onClick={ops.handleConnect} disabled={ops.loading}>
+              {ops.loading ? 'Conectando...' : 'Conectar com GitHub →'}
+            </button>
+            <p style={styles.connectHint}>Necessário para sync com Lovable</p>
+          </div>
+        ) : (
+          <>
+            {/* Sync status */}
+            <div style={styles.section}>
+              <div style={styles.sectionTitle}>Sincronização</div>
+              <div style={styles.syncRow}>
+                {changes.length > 0 && (
+                  <span style={styles.aheadBadge}>↑ {changes.length} ahead</span>
+                )}
+                {localChangeCount > 0 && (
+                  <span style={styles.localBadge}>+{localChangeCount} salvas</span>
+                )}
+                <span style={{ flex: 1 }} />
+                <button style={styles.syncActionBtn} onClick={ops.handlePush} disabled={ops.loading}>Push</button>
+                <button style={styles.syncActionBtn} onClick={ops.handlePull} disabled={ops.loading}>Pull</button>
+              </div>
+            </div>
+
+            {/* Alterações */}
+            {changes.length > 0 && (
+              <div style={styles.section}>
+                <div style={styles.sectionTitle}>Alterações ({changes.length})</div>
+                <div style={styles.fileList}>
+                  {changes.slice(0, 15).map((c, i) => {
+                    const badge = STATUS_BADGE[c.status] || { label: c.status, color: '#888' };
+                    return (
+                      <div key={i} style={styles.fileItem}>
+                        <span
+                          style={{
+                            ...styles.statusBadge,
+                            background: `${badge.color}22`,
+                            color: badge.color,
+                            borderColor: `${badge.color}44`,
+                          }}
+                        >
+                          {badge.label}
+                        </span>
+                        <span style={styles.fileName}>{c.file}</span>
+                      </div>
+                    );
+                  })}
+                  {changes.length > 15 && (
+                    <div style={styles.moreFiles}>+{changes.length - 15} mais arquivos</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Commit */}
+            <div style={styles.section}>
+              <div style={styles.sectionTitle}>Commit</div>
+              <input
+                style={styles.commitInput}
+                value={commitMsg}
+                onChange={(e) => setCommitMsg(e.target.value)}
+                placeholder="feat: descrição das mudanças"
+                onKeyDown={(e) => e.key === 'Enter' && ops.handleCommit(commitMsg, () => setCommitMsg(''))}
+              />
+              <div style={styles.commitBtns}>
+                <button
+                  style={{ ...styles.commitBtn, opacity: commitMsg.trim() ? 1 : 0.4 }}
+                  onClick={() => ops.handleCommit(commitMsg, () => setCommitMsg(''))}
+                  disabled={!commitMsg.trim() || ops.loading}
+                >
+                  Commit
+                </button>
+                <button
+                  style={{ ...styles.commitPushBtn, opacity: commitMsg.trim() ? 1 : 0.4 }}
+                  onClick={async () => {
+                    await ops.handleCommit(commitMsg, () => setCommitMsg(''));
+                    await ops.handlePush();
+                  }}
+                  disabled={!commitMsg.trim() || ops.loading}
+                >
+                  Commit & Push
+                </button>
+              </div>
+            </div>
+
+            {/* Log recente */}
+            <div style={styles.section}>
+              <div style={styles.sectionTitle}>Log recente</div>
+              <button style={styles.lovableBtn} onClick={ops.handleSyncWithLovable} disabled={ops.loading}>
+                Sync com Lovable →
+              </button>
+            </div>
+
+            {ops.syncLog.trim() && (
+              <pre style={styles.syncLog}>{ops.syncLog.trim()}</pre>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: { display: 'flex', flexDirection: 'column', height: '100%', background: '#111', fontSize: '12px' },
-  header: { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderBottom: '1px solid #2a2a2a', flexShrink: 0 },
-  icon: { color: '#888', fontSize: 14 },
-  title: { color: '#ccc', fontWeight: 600, flex: 1, fontSize: 12 },
-  username: { color: '#00ff88', fontSize: 11, fontWeight: 400 },
-  disconnectBtn: { background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 16, padding: '0 2px' },
-  connectArea: { padding: 16, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' },
-  connectBtn: { background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#00ff88', padding: '8px 16px', borderRadius: 6, cursor: 'pointer', fontSize: 12, width: '100%' },
-  connectHint: { color: '#444', fontSize: 11, textAlign: 'center' },
-  body: { flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px' },
-  row: { display: 'flex', alignItems: 'center', gap: 6 },
-  label: { color: '#555', fontSize: 11, width: 38, flexShrink: 0 },
-  branchSelect: { flex: 1, background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#ccc', borderRadius: 4, padding: '3px 6px', fontSize: 11 },
-  branchInput: { flex: 1, background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#ccc', borderRadius: 4, padding: '3px 6px', fontSize: 11, outline: 'none' },
-  smallBtn: { background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#888', cursor: 'pointer', borderRadius: 4, padding: '2px 7px', fontSize: 12 },
-  changeBadge: { background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.15)', color: '#00ff88', borderRadius: 4, padding: '3px 8px', fontSize: 11 },
-  watchBadge: { color: '#888', fontSize: 10 },
-  actions: { display: 'flex', gap: 4 },
-  actionBtn: { flex: 1, background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#888', borderRadius: 4, padding: '5px 0', cursor: 'pointer', fontSize: 11 },
-  syncBtn: { color: '#00ff88', borderColor: 'rgba(0,255,136,0.2)' },
-  fileList: { background: '#0d0d0d', borderRadius: 4, border: '1px solid #1a1a1a', padding: '4px 0', maxHeight: 120, overflow: 'auto' },
-  fileItem: { display: 'flex', gap: 6, padding: '2px 8px', alignItems: 'center' },
-  fileStatus: { fontWeight: 700, fontSize: 11, width: 12, flexShrink: 0, fontFamily: 'monospace' },
-  fileName: { color: '#888', fontSize: 11, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  moreFiles: { color: '#444', fontSize: 10, padding: '2px 8px' },
-  commitArea: { display: 'flex', gap: 4, alignItems: 'center' },
-  commitInput: { flex: 1, background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#ccc', borderRadius: 4, padding: '5px 8px', fontSize: 11, outline: 'none' },
-  commitBtn: { background: '#00ff88', color: '#0a0a0a', border: 'none', borderRadius: 4, padding: '5px 10px', cursor: 'pointer', fontWeight: 700, fontSize: 12 },
-  lovableBtn: { background: 'rgba(0,255,136,0.05)', border: '1px solid rgba(0,255,136,0.2)', color: '#00ff88', borderRadius: 4, padding: '6px 10px', cursor: 'pointer', fontSize: 11, width: '100%', marginTop: 4 },
-  syncLog: { background: '#0d0d0d', border: '1px solid #1a1a1a', borderRadius: 4, padding: '6px 8px', fontSize: 10, color: '#555', fontFamily: 'monospace', overflow: 'auto', maxHeight: 80, whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 },
+  header: {
+    height: 44,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '0 14px',
+    borderBottom: '1px solid rgba(255,255,255,0.55)',
+    background: 'rgba(213,216,222,0.9)',
+    flexShrink: 0,
+  },
+  headerTitle: {
+    fontSize: 13,
+    color: '#3a3d45',
+    fontWeight: 500,
+    flex: 1,
+  },
+  username: {
+    color: '#72757f',
+    fontWeight: 400,
+    fontSize: 12,
+  },
+  closeBtn: {
+    background: 'rgba(255,255,255,0.5)',
+    border: 'none',
+    borderRadius: 5,
+    width: 24,
+    height: 24,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    color: '#a8aab4',
+    fontSize: 12,
+    boxShadow: '0 1px 0 rgba(255,255,255,0.8) inset',
+  },
+  branchRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '8px 12px',
+    borderBottom: '1px solid rgba(255,255,255,0.4)',
+    background: 'rgba(213,216,222,0.5)',
+    flexShrink: 0,
+  },
+  branchIcon: { color: '#72757f', fontSize: 14 },
+  branchSelect: {
+    flex: 1,
+    background: 'rgba(255,255,255,0.6)',
+    border: '1px solid rgba(255,255,255,0.5)',
+    color: '#3a3d45',
+    borderRadius: 6,
+    padding: '4px 8px',
+    fontSize: 12,
+    outline: 'none',
+  },
+  branchInput: {
+    flex: 1,
+    background: 'rgba(255,255,255,0.7)',
+    border: '1px solid rgba(255,255,255,0.5)',
+    color: '#3a3d45',
+    borderRadius: 6,
+    padding: '4px 8px',
+    fontSize: 12,
+    outline: 'none',
+  },
+  smallBtn: {
+    background: 'rgba(255,255,255,0.6)',
+    border: '1px solid rgba(255,255,255,0.5)',
+    color: '#72757f',
+    cursor: 'pointer',
+    borderRadius: 6,
+    padding: '4px 9px',
+    fontSize: 13,
+  },
+  body: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '10px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 14,
+  },
+  connectArea: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    alignItems: 'center',
+    paddingTop: 24,
+  },
+  connectBtn: {
+    background: 'rgba(60,176,67,0.1)',
+    border: '1px solid rgba(60,176,67,0.3)',
+    color: '#3CB043',
+    padding: '9px 18px',
+    borderRadius: 8,
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 500,
+    width: '100%',
+  },
+  connectHint: {
+    color: '#a8aab4',
+    fontSize: 11,
+    textAlign: 'center',
+    margin: 0,
+  },
+  section: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  sectionTitle: {
+    fontSize: 9.5,
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: '#a8aab4',
+    fontFamily: "'JetBrains Mono', monospace",
+    marginBottom: 2,
+  },
+  syncRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aheadBadge: {
+    background: 'rgba(60,176,67,0.12)',
+    border: '1px solid rgba(60,176,67,0.25)',
+    color: '#3CB043',
+    borderRadius: 5,
+    padding: '3px 8px',
+    fontSize: 11,
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  localBadge: {
+    background: 'rgba(160,160,160,0.12)',
+    border: '1px solid rgba(160,160,160,0.2)',
+    color: '#888',
+    borderRadius: 5,
+    padding: '3px 8px',
+    fontSize: 11,
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  syncActionBtn: {
+    background: 'rgba(255,255,255,0.65)',
+    border: '1px solid rgba(255,255,255,0.5)',
+    color: '#3a3d45',
+    borderRadius: 6,
+    padding: '5px 12px',
+    cursor: 'pointer',
+    fontSize: 11.5,
+    fontWeight: 500,
+    boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
+  },
+  fileList: {
+    background: 'rgba(255,255,255,0.45)',
+    borderRadius: 8,
+    border: '1px solid rgba(255,255,255,0.5)',
+    overflow: 'hidden',
+    maxHeight: 160,
+    overflowY: 'auto',
+  },
+  fileItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '5px 10px',
+    borderBottom: '1px solid rgba(255,255,255,0.3)',
+  },
+  statusBadge: {
+    fontSize: 10,
+    fontFamily: "'JetBrains Mono', monospace",
+    fontWeight: 700,
+    padding: '1px 5px',
+    borderRadius: 3,
+    border: '1px solid',
+    flexShrink: 0,
+    minWidth: 18,
+    textAlign: 'center',
+  } as React.CSSProperties,
+  fileName: {
+    color: '#5a5d66',
+    fontSize: 11,
+    fontFamily: "'JetBrains Mono', monospace",
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  moreFiles: {
+    color: '#a8aab4',
+    fontSize: 10,
+    padding: '4px 10px',
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  commitInput: {
+    background: 'rgba(255,255,255,0.6)',
+    border: '1px solid rgba(255,255,255,0.5)',
+    color: '#3a3d45',
+    borderRadius: 7,
+    padding: '7px 10px',
+    fontSize: 12,
+    outline: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
+  } as React.CSSProperties,
+  commitBtns: {
+    display: 'flex',
+    gap: 6,
+  },
+  commitBtn: {
+    flex: 1,
+    background: 'rgba(255,255,255,0.65)',
+    border: '1px solid rgba(255,255,255,0.5)',
+    color: '#3a3d45',
+    borderRadius: 7,
+    padding: '7px 10px',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 500,
+    boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
+  },
+  commitPushBtn: {
+    flex: 1,
+    background: 'rgba(60,176,67,0.15)',
+    border: '1px solid rgba(60,176,67,0.3)',
+    color: '#3CB043',
+    borderRadius: 7,
+    padding: '7px 10px',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 500,
+  },
+  lovableBtn: {
+    background: 'rgba(255,255,255,0.55)',
+    border: '1px solid rgba(255,255,255,0.45)',
+    color: '#5a5d66',
+    borderRadius: 7,
+    padding: '8px 12px',
+    cursor: 'pointer',
+    fontSize: 12,
+    width: '100%',
+    textAlign: 'left',
+    boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
+  } as React.CSSProperties,
+  syncLog: {
+    background: 'rgba(255,255,255,0.4)',
+    border: '1px solid rgba(255,255,255,0.45)',
+    borderRadius: 7,
+    padding: '8px 10px',
+    fontSize: 10,
+    color: '#72757f',
+    fontFamily: "'JetBrains Mono', monospace",
+    overflow: 'auto',
+    maxHeight: 80,
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    margin: 0,
+  } as React.CSSProperties,
 };

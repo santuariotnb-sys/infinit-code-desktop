@@ -48,6 +48,18 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     const msg = (text || input).trim();
     if (!msg) return;
 
+    // Verify Claude is installed before sending
+    try {
+      const statusResult = await window.api.claude.status?.();
+      if (!statusResult?.installed) {
+        chat.addSystemMessage('Claude Code não encontrado. Execute: npm install -g @anthropic-ai/claude-code');
+        chat.setClaudeStatus('offline');
+        return;
+      }
+    } catch {
+      // If status check fails, fall through to the claudeStatus check below
+    }
+
     if (chat.claudeStatus === 'offline') {
       chat.addSystemMessage('Claude Code não encontrado. Inicie no terminal primeiro.');
       return;
@@ -101,6 +113,13 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   const suggestions = getSuggestions(activeFile, terminalOutput);
   const isEmpty = chat.messages.length === 0;
 
+  const QUICK_SENDS = [
+    { label: 'Explique este arquivo', buildMsg: () => activeFile ? `Explique o arquivo ${activeFile.path.split('/').pop()}` : 'Explique o arquivo ativo' },
+    { label: 'Crie um componente React', buildMsg: () => 'Crie um componente React com TypeScript e estilização inline' },
+    { label: 'Analise os erros do terminal', buildMsg: () => 'Analise os erros presentes no terminal e sugira correções' },
+    { label: 'Otimize o código', buildMsg: () => activeFile ? `Otimize o código do arquivo ${activeFile.path.split('/').pop()}` : 'Otimize o código do arquivo ativo' },
+  ];
+
   return (
     <div
       style={{ ...styles.container, ...(isDragOver ? styles.dragOver : {}) }}
@@ -140,7 +159,26 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
       {/* Messages / empty state */}
       <div style={styles.messagesWrapper}>
         {isEmpty
-          ? <ChatEmptyState onQuickAction={(inject, delay) => { onTerminalInject(inject); if (delay) setTimeout(() => onTerminalInject(delay), 800); }} />
+          ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+              <ChatEmptyState onQuickAction={(inject, delay) => { onTerminalInject(inject); if (delay) setTimeout(() => onTerminalInject(delay), 800); }} />
+              <div style={styles.quickSends}>
+                {QUICK_SENDS.map((qs) => (
+                  <button
+                    key={qs.label}
+                    style={styles.quickSendBtn}
+                    onClick={() => {
+                      const msg = qs.buildMsg();
+                      setInput(msg);
+                      setTimeout(() => send(msg), 50);
+                    }}
+                  >
+                    {qs.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
           : <ChatMessages messages={chat.messages} streamingText={chat.streamingText} actionCards={actionCards} onOpenFile={onOpenFile} onTerminalInject={onTerminalInject} />
         }
       </div>
@@ -216,4 +254,17 @@ const styles: Record<string, React.CSSProperties> = {
   mentionActive: { background: 'rgba(0,255,136,0.1)', color: '#00ff88' },
   tokenBar: { display: 'flex', justifyContent: 'space-between', padding: '2px 14px 4px', fontSize: 10, fontFamily: 'monospace', borderTop: '1px solid #1a1a1a', flexShrink: 0 },
   clearBtn: { background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 14, padding: '2px 4px', lineHeight: 1 },
+  quickSends: { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 12px 12px', flexShrink: 0 },
+  quickSendBtn: {
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    color: '#888',
+    borderRadius: 6,
+    padding: '8px 12px',
+    cursor: 'pointer',
+    fontSize: 11,
+    textAlign: 'left',
+    fontFamily: 'inherit',
+    transition: 'background 0.12s, color 0.12s',
+  } as React.CSSProperties,
 };
