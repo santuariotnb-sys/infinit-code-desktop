@@ -32,6 +32,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: {
       unpack: '**/*.node',
+      unpackDir: 'node_modules/{node-pty,keytar}',
     },
     name: 'Infinit Code',
     executableName: 'infinit-code',
