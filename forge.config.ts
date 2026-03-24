@@ -60,7 +60,6 @@ const config: ForgeConfig = {
       contents: (opts) => [
         { x: 160, y: 160, type: 'file', path: opts.appPath },
         { x: 380, y: 160, type: 'link', path: '/Applications' },
-        { x: 270, y: 290, type: 'file', path: path.join(__dirname, 'assets/Instalar.command') },
       ],
       window: { size: { width: 540, height: 400 } },
     }, ['darwin']),
