@@ -105,28 +105,31 @@ export function registerLicenseHandlers(_mainWindow: BrowserWindow): void {
 
     if (!license) return null;
 
+    const GRACE_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
+    const lastValidated = license.validatedAt ? new Date(license.validatedAt).getTime() : 0;
+    const withinGrace = Date.now() - lastValidated < GRACE_MS;
+
+    const cached = { valid: true, key: license.key, email: license.email, plan: license.plan };
+
     // Re-validate silently
-    try {
-      const result = await validateOnline(license.key, license.email);
-      if (!result.valid) {
-        store.delete('license');
-        return null;
-      }
-      return {
-        valid: true,
-        key: license.key,
-        email: license.email,
-        plan: result.plan || license.plan,
-      };
-    } catch {
-      // Offline: trust cached license
-      return {
-        valid: true,
-        key: license.key,
-        email: license.email,
-        plan: license.plan,
-      };
+    const result = await validateOnline(license.key, license.email);
+
+    if (result.valid) {
+      // Atualiza timestamp de validação
+      store.set('license', { ...license, validatedAt: new Date().toISOString() });
+      return { ...cached, plan: result.plan || license.plan };
     }
+
+    if (result.error) {
+      // Falha de rede ou servidor fora do ar — não apaga a licença
+      if (withinGrace) return cached;
+      // Fora do grace period e sem acesso ao servidor
+      return { ...cached, offline: true };
+    }
+
+    // Servidor respondeu explicitamente que a licença é inválida
+    store.delete('license');
+    return null;
   });
 
   ipcMain.handle('license:clear', () => {

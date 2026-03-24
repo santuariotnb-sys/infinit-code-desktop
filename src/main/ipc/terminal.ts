@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import os from 'os';
 import * as pty from 'node-pty';
+import treeKill from 'tree-kill';
 
 let ptyProcess: pty.IPty | null = null;
 
@@ -21,6 +22,7 @@ export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
         cols: 80,
         rows: 24,
         cwd: cwd || homedir,
+        handleFlowControl: true,
         env: {
           ...process.env,
           TERM: 'xterm-256color',
@@ -59,8 +61,11 @@ export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('terminal:kill', () => {
     if (ptyProcess) {
+      const pid = ptyProcess.pid;
       ptyProcess.kill();
       ptyProcess = null;
+      // tree-kill mata toda a árvore de subprocessos (claude, npm, node filhos)
+      if (pid) treeKill(pid, 'SIGTERM');
     }
   });
 }

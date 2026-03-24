@@ -34,6 +34,8 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
   const [viewport, setViewport] = useState<ViewportSize>('desktop');
   const [hmrFlash, setHmrFlash] = useState(false);
   const [serverError, setServerError] = useState(false);
+  const [manualPort, setManualPort] = useState('');
+  const [showPortInput, setShowPortInput] = useState(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Detect server from terminal output
@@ -87,6 +89,17 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
 
   const setViewportSize = useCallback((v: ViewportSize) => setViewport(v), []);
 
+  function handleManualPort() {
+    const p = parseInt(manualPort, 10);
+    if (p >= 1024 && p <= 65535) {
+      setPort(p);
+      setStatus('loading');
+      setServerError(false);
+      setShowPortInput(false);
+      setManualPort('');
+    }
+  }
+
   if (status === 'idle' || !port) {
     return (
       <div style={styles.container}>
@@ -101,6 +114,24 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
               ▶ npm run dev
             </button>
           )}
+          {showPortInput ? (
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <input
+                autoFocus
+                type="number"
+                placeholder="3000"
+                value={manualPort}
+                onChange={(e) => setManualPort(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleManualPort()}
+                style={styles.portInput}
+              />
+              <button style={styles.runDevBtn} onClick={handleManualPort}>→</button>
+            </div>
+          ) : (
+            <button style={{ ...styles.runDevBtn, marginTop: 4, opacity: 0.5, fontSize: 11 }} onClick={() => setShowPortInput(true)}>
+              porta manual
+            </button>
+          )}
         </div>
       </div>
     );
@@ -112,7 +143,13 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
       <div style={{ ...styles.statusBar, borderBottom: `1px solid ${hmrFlash ? '#00ff88' : '#2a2a2a'}`, transition: 'border-color 0.3s' }}>
         <span style={{ ...styles.liveDot, background: status === 'live' ? '#00ff88' : '#ffaa00' }} />
         <span style={styles.liveLabel}>{status === 'live' ? 'LIVE' : 'CONNECTING'}</span>
-        <span style={styles.portLabel}>localhost:{port}</span>
+        <span
+          style={{ ...styles.portLabel, cursor: 'pointer' }}
+          title="Clique para alterar a porta"
+          onClick={() => setShowPortInput((v) => !v)}
+        >
+          localhost:{port}
+        </span>
         <div style={styles.viewportBtns}>
           {(['mobile', 'tablet', 'desktop'] as ViewportSize[]).map((v) => (
             <button
@@ -128,6 +165,22 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
         <button style={styles.iconBtn} onClick={handleRefresh} title="Atualizar">⟳</button>
         <button style={styles.iconBtn} onClick={openInBrowser} title="Abrir no browser">↗</button>
       </div>
+
+      {/* Port override inline */}
+      {showPortInput && (
+        <div style={{ display: 'flex', gap: 6, padding: '5px 10px', background: '#111', borderBottom: '1px solid #2a2a2a', flexShrink: 0 }}>
+          <input
+            autoFocus
+            type="number"
+            placeholder="porta (ex: 3001)"
+            value={manualPort}
+            onChange={(e) => setManualPort(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleManualPort(); if (e.key === 'Escape') setShowPortInput(false); }}
+            style={styles.portInput}
+          />
+          <button style={{ ...styles.iconBtn, color: '#00ff88' }} onClick={handleManualPort}>→</button>
+        </div>
+      )}
 
       {/* Error banner */}
       {serverError && (
@@ -280,6 +333,17 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     lineHeight: 1.5,
     maxWidth: 200,
+  },
+  portInput: {
+    background: '#0d0d0d',
+    border: '1px solid #2a2a2a',
+    borderRadius: 4,
+    color: '#fff',
+    fontSize: 11,
+    padding: '3px 8px',
+    fontFamily: 'monospace',
+    width: 100,
+    outline: 'none',
   },
   runDevBtn: {
     marginTop: 8,
