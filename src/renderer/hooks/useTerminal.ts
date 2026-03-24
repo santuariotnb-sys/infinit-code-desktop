@@ -43,19 +43,6 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
     };
   }, []);
 
-  // Cmd+`
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === '`') {
-        e.preventDefault();
-        setIsExpanded((v) => !v);
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
   function appendOutput(line: string) {
     setTerminalOutput((prev) => prev + '\n' + line);
   }

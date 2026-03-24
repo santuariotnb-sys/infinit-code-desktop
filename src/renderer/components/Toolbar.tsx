@@ -21,6 +21,7 @@ interface ToolbarProps {
   gitBranch?: string;
   livePort: number | null;
   onLogout?: () => void;
+  isChatStreaming?: boolean;
 }
 
 const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
@@ -29,7 +30,7 @@ export default function Toolbar({
   projectPath, fileName, modified, onSave, onOpenFolder,
   onTogglePreview, onToggleChat, onToggleGit, onToggleFileTree, onToggleTerminal, onRunDev,
   showPreview, showChat, showGit, showFileTree, showTerminal,
-  gitChangeCount, gitBranch = 'main', livePort, onLogout,
+  gitChangeCount, gitBranch = 'main', livePort, onLogout, isChatStreaming,
 }: ToolbarProps) {
   const projectName = projectPath ? (projectPath.split('/').pop() || projectPath) : '';
   const [session, setSession] = useState<{ name: string; avatar: string } | null>(null);
@@ -118,6 +119,9 @@ export default function Toolbar({
       <button style={pill(showChat)} onClick={onToggleChat} title="Cmd+J">
         <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1.5 1.5h8v6.5H5l-3 2v-2H1.5z" stroke="currentColor" strokeWidth="1.1" fill="none" strokeLinejoin="round" /></svg>
         Chat
+        {isChatStreaming && (
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f0a020', animation: 'tbPulse 1s infinite', flexShrink: 0 }} />
+        )}
       </button>
 
       <button style={pill(showPreview)} onClick={onTogglePreview} title="Preview">

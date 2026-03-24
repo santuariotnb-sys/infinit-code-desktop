@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import FileTree from '../components/FileTree';
 import Editor from '../components/Editor';
@@ -13,6 +13,7 @@ import { useTerminal } from '../hooks/useTerminal';
 import { usePanels } from '../hooks/usePanels';
 import { useGitPanel } from '../hooks/useGitPanel';
 import { useGitHub } from '../hooks/useGitHub';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
 const NOISE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E")`;
@@ -25,6 +26,17 @@ export default function IDE() {
   });
   const gitPanel = useGitPanel();
   const github = useGitHub({ onProjectOpen: fileManager.openProject });
+
+  // Track Claude streaming status for toolbar indicator
+  const [isChatStreaming, setIsChatStreaming] = useState(false);
+
+  useKeyboardShortcuts({
+    onSave: fileManager.handleSave,
+    onToggleTerminal: () => terminal.setIsExpanded((v) => !v),
+    onToggleFileTree: panels.toggleFileTree,
+    onToggleChat: panels.toggleChat,
+    onToggleGit: panels.toggleGit,
+  });
 
   // Abre preview automaticamente quando porta é detectada
   useEffect(() => {
@@ -68,6 +80,7 @@ export default function IDE() {
         showTerminal={terminal.isExpanded}
         gitChangeCount={gitPanel.gitChangeCount}
         livePort={terminal.detectedPort}
+        isChatStreaming={isChatStreaming}
       />
 
       <div style={styles.main}>
@@ -131,8 +144,18 @@ export default function IDE() {
                 )}
               </div>
             ) : (
+              // Project open but no file selected — show keyboard shortcuts hint
               <div style={styles.noFile}>
-                <p style={styles.noFileText}>Selecione um arquivo para editar</p>
+                <div style={styles.emptyProjectHint}>
+                  <p style={styles.noFileText}>Selecione um arquivo para editar</p>
+                  <div style={styles.shortcutList}>
+                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘S</kbd><span>Salvar</span></div>
+                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘`</kbd><span>Toggle Terminal</span></div>
+                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘B</kbd><span>Toggle Arquivos</span></div>
+                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘J</kbd><span>Toggle Chat</span></div>
+                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘⇧G</kbd><span>Toggle Git</span></div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -191,6 +214,7 @@ export default function IDE() {
                 onTerminalInject={terminal.writeToTerminal}
                 terminalOutput={terminal.terminalOutput}
                 onOpenFile={fileManager.handleSelectFile}
+                onStreamingChange={setIsChatStreaming}
               />
             </ErrorBoundary>
           </div>
@@ -209,6 +233,12 @@ export default function IDE() {
           </>
         )}
         <span style={{ flex: 1 }} />
+        {isChatStreaming && (
+          <>
+            <span style={styles.sbItem}>Claude pensando...</span>
+            <span style={styles.sbSep} />
+          </>
+        )}
         {fileName && <span style={styles.sbItem}>{fileName}</span>}
         {fileManager.isModified && (
           <>
@@ -262,6 +292,29 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(240,241,245,0.5)',
   },
   noFileText: { color: '#a8aab4', fontSize: 13, fontFamily: "'JetBrains Mono', monospace" },
+  emptyProjectHint: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+  },
+  shortcutList: {
+    display: 'flex', flexDirection: 'column', gap: 8,
+  },
+  shortcutRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    fontSize: 12, color: '#a8aab4', fontFamily: "'JetBrains Mono', monospace",
+  },
+  kbd: {
+    background: 'rgba(255,255,255,0.7)',
+    border: '1px solid rgba(0,0,0,0.12)',
+    borderRadius: 5,
+    padding: '2px 7px',
+    fontSize: 11,
+    color: '#3a3d45',
+    fontFamily: "'JetBrains Mono', monospace",
+    boxShadow: '0 1px 0 rgba(0,0,0,0.12)',
+    minWidth: 48,
+    textAlign: 'center' as const,
+    display: 'inline-block',
+  },
   emptyBtnPrimary: {
     display: 'flex', alignItems: 'center', gap: 8,
     background: 'rgba(60,176,67,0.1)', border: '1px solid rgba(60,176,67,0.25)',
@@ -296,5 +349,4 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0 6px',
   },
   sbSep: { width: 1, height: 12, background: 'rgba(255,255,255,0.3)', margin: '0 2px', flexShrink: 0 },
-
 };

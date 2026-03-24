@@ -33,15 +33,20 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
 
   async function handleShowClone() {
     setIsCloneLoading(true);
-    if (!ghStatus?.connected) await handleConnectGitHub();
     try {
+      if (!ghStatus?.connected) {
+        await window.api.github.connectOAuth();
+        const s = await window.api.github.authStatus();
+        setGhStatus(s);
+        if (!s.connected) { setIsCloneLoading(false); return; }
+      }
       const result = await window.api.github.listRepos();
       setCloneRepos((result?.repos || []) as GitRepo[]);
+      setIsCloneMode(true);
     } catch {
       setCloneRepos([]);
     }
     setIsCloneLoading(false);
-    setIsCloneMode(true);
   }
 
   async function handleCloneRepo(repo: GitRepo) {

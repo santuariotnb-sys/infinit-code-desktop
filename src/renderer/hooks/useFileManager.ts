@@ -36,19 +36,6 @@ export function useFileManager() {
     };
   }, [projectPath, loadFiles]);
 
-  // Cmd+S
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === 's') {
-        e.preventDefault();
-        handleSave();
-      }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [openFile, fileContent, isModified, handleSave]);
-
   async function openProject(path: string) {
     setProjectPath(path);
     setOpenFile(null);

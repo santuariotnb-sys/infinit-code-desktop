@@ -17,6 +17,29 @@ const SERVICE = 'infinit-code-github';
 const ACCOUNT = 'oauth-token';
 const CLIENT_ID = 'Ov23liFYvVqtk4wX3qrE';
 
+// File-based token fallback when keytar is unavailable
+const TOKEN_FILE = path.join(os.homedir(), '.config', 'infinit-code', 'gh-token');
+
+function readTokenFile(): string | null {
+  try {
+    if (fs.existsSync(TOKEN_FILE)) {
+      return fs.readFileSync(TOKEN_FILE, 'utf-8').trim() || null;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function writeTokenFile(token: string) {
+  try {
+    fs.mkdirSync(path.dirname(TOKEN_FILE), { recursive: true });
+    fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
+  } catch { /* ignore */ }
+}
+
+function deleteTokenFile() {
+  try { if (fs.existsSync(TOKEN_FILE)) fs.unlinkSync(TOKEN_FILE); } catch { /* ignore */ }
+}
+
 function httpsGet(url: string, token?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -51,8 +74,21 @@ function httpsPost(opts: https.RequestOptions, body: string): Promise<string> {
 }
 
 async function getToken(): Promise<string | null> {
-  if (keytar) return keytar.getPassword(SERVICE, ACCOUNT);
-  return null;
+  if (keytar) {
+    const t = await keytar.getPassword(SERVICE, ACCOUNT);
+    if (t) return t;
+  }
+  return readTokenFile();
+}
+
+async function saveToken(token: string) {
+  if (keytar) await keytar.setPassword(SERVICE, ACCOUNT, token);
+  writeTokenFile(token);
+}
+
+async function deleteToken() {
+  if (keytar) await keytar.deletePassword(SERVICE, ACCOUNT);
+  deleteTokenFile();
 }
 
 const fsWatchers = new Map<string, fs.FSWatcher>();
@@ -94,7 +130,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
           const token: string = tokenData.access_token;
           if (!token) { resolve({ connected: false, error: 'Token not received' }); return; }
 
-          if (keytar) await keytar.setPassword(SERVICE, ACCOUNT, token);
+          await saveToken(token);
 
           const userRaw = await httpsGet('https://api.github.com/user', token);
           const user = JSON.parse(userRaw);
@@ -119,7 +155,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
       if (!token) return { connected: false };
       const raw = await httpsGet('https://api.github.com/user', token);
       const user = JSON.parse(raw);
-      return { connected: true, username: user.login, avatar: user.avatar_url };
+      return { connected: true, user: user.login, avatar: user.avatar_url };
     } catch {
       return { connected: false };
     }
@@ -127,7 +163,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
   // ── Disconnect ─────────────────────────────────────────────
   ipcMain.handle('github:disconnect', async () => {
-    if (keytar) await keytar.deletePassword(SERVICE, ACCOUNT);
+    await deleteToken();
     return { ok: true };
   });
 
