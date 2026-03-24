@@ -335,6 +335,7 @@ export default function IDE() {
               )}
             </div>
           </div>
+          </div>
         )}
       </div>
 
@@ -419,6 +420,14 @@ const styles: Record<string, React.CSSProperties> = {
   terminalToggle: { color: 'rgba(255,255,255,0.2)', fontSize: 10 },
   terminalBody: { flex: 1, overflow: 'hidden' },
   panel: { borderLeft: '1px solid rgba(255,255,255,0.55)', flexShrink: 0, overflow: 'hidden' },
+  resizeHandle: {
+    width: 4,
+    cursor: 'col-resize',
+    flexShrink: 0,
+    background: 'transparent',
+    transition: 'background 0.15s',
+    zIndex: 10,
+  },
   noFile: {
     height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
     background: 'rgba(240,241,245,0.5)',
