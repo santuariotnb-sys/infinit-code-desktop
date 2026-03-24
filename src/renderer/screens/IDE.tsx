@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 import FileTree from '../components/FileTree';
 import Editor from '../components/Editor';
@@ -55,10 +55,47 @@ export default function IDE() {
     if (terminal.detectedPort) panels.setShowPreview(true);
   }, [terminal.detectedPort]);
 
+  const [previewWidth, setPreviewWidth] = useState(420);
+  const [chatWidth, setChatWidth] = useState(300);
+  const previewDragRef = useRef<{ startX: number; startW: number } | null>(null);
+  const chatDragRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  function startPreviewDrag(e: React.MouseEvent) {
+    previewDragRef.current = { startX: e.clientX, startW: previewWidth };
+    const onMove = (ev: MouseEvent) => {
+      if (!previewDragRef.current) return;
+      const delta = previewDragRef.current.startX - ev.clientX;
+      setPreviewWidth(Math.max(280, Math.min(1000, previewDragRef.current.startW + delta)));
+    };
+    const onUp = () => {
+      previewDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function startChatDrag(e: React.MouseEvent) {
+    chatDragRef.current = { startX: e.clientX, startW: chatWidth };
+    const onMove = (ev: MouseEvent) => {
+      if (!chatDragRef.current) return;
+      const delta = chatDragRef.current.startX - ev.clientX;
+      setChatWidth(Math.max(220, Math.min(600, chatDragRef.current.startW + delta)));
+    };
+    const onUp = () => {
+      chatDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
   const TERMINAL_HEIGHT = terminal.isExpanded ? 220 : 34;
   const SIDEBAR_WIDTH = panels.showFileTree ? 200 : 0;
-  const PREVIEW_WIDTH = panels.showPreview ? 420 : 0;
-  const CHAT_WIDTH = 300;
+  const PREVIEW_WIDTH = panels.showPreview ? previewWidth : 0;
+  const CHAT_WIDTH = chatWidth;
 
   const fileName = fileManager.openFile
     ? fileManager.openFile.split('/').pop() || ''
@@ -203,13 +240,20 @@ export default function IDE() {
         </div>
 
         {panels.showPreview && (
-          <div style={{ ...styles.panel, width: PREVIEW_WIDTH }}>
-            <ErrorBoundary name="Preview">
-              <Preview
-                terminalOutput={terminal.terminalOutput}
-                onRunDev={terminal.runDevServer}
-              />
-            </ErrorBoundary>
+          <div style={{ ...styles.panel, width: PREVIEW_WIDTH, display: 'flex', flexDirection: 'row' }}>
+            <div
+              style={styles.resizeHandle}
+              onMouseDown={startPreviewDrag}
+              title="Arraste para redimensionar"
+            />
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <ErrorBoundary name="Preview">
+                <Preview
+                  terminalOutput={terminal.terminalOutput}
+                  onRunDev={terminal.runDevServer}
+                />
+              </ErrorBoundary>
+            </div>
           </div>
         )}
 
@@ -225,7 +269,13 @@ export default function IDE() {
         )}
 
         {panels.showChat && (
-          <div style={{ ...styles.panel, width: CHAT_WIDTH, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ ...styles.panel, width: CHAT_WIDTH, display: 'flex', flexDirection: 'row' }}>
+          <div
+            style={styles.resizeHandle}
+            onMouseDown={startChatDrag}
+            title="Arraste para redimensionar"
+          />
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* Tab bar */}
             <div style={styles.chatTabs}>
               {([
