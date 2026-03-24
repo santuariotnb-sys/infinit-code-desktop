@@ -173,6 +173,36 @@ export default function AgentPanel({ projectPath, activeFile, activeFileContent 
           style={s.textarea}
           rows={3}
         />
+        {/* Skill chips */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+          {SKILLS.map((skill) => {
+            const active = activeSkills.includes(skill.id);
+            return (
+              <button
+                key={skill.id}
+                disabled={running}
+                onClick={() => setActiveSkills((prev) =>
+                  active ? prev.filter((s) => s !== skill.id) : [...prev, skill.id]
+                )}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  background: active ? 'rgba(119,85,204,0.15)' : 'rgba(255,255,255,0.5)',
+                  border: `1px solid ${active ? 'rgba(119,85,204,0.4)' : 'rgba(255,255,255,0.6)'}`,
+                  borderRadius: 7, padding: '3px 8px',
+                  fontSize: 10, cursor: running ? 'not-allowed' : 'pointer',
+                  color: active ? '#7755cc' : '#a8aab4',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontWeight: active ? 500 : 400,
+                  transition: 'all .15s',
+                }}
+              >
+                <span style={{ fontSize: 10 }}>{skill.icon}</span>
+                {skill.label}
+              </button>
+            );
+          })}
+        </div>
+
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <button
             onClick={runAgents}

@@ -71,15 +71,18 @@ export default function Terminal() {
       term.write(data);
     });
 
-    // Resize
+    // Resize — guarda dimensões mínimas para não travar o pty
     const observer = new ResizeObserver(() => {
-      if (fitAddonRef.current) {
+      if (!fitAddonRef.current || !containerRef.current) return;
+      const { offsetWidth, offsetHeight } = containerRef.current;
+      if (offsetWidth < 20 || offsetHeight < 20) return;
+      try {
         fitAddonRef.current.fit();
         const dims = fitAddonRef.current.proposeDimensions();
-        if (dims) {
+        if (dims && dims.cols > 0 && dims.rows > 0) {
           window.api.terminal.resize(dims.cols, dims.rows);
         }
-      }
+      } catch { /* ignore resize errors */ }
     });
     observer.observe(containerRef.current);
 

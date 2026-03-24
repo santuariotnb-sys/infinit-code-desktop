@@ -100,7 +100,7 @@ export default function IDE() {
         )}
 
         <div style={styles.editorArea}>
-          <div style={{ ...styles.editorPane, height: `calc(100% - ${TERMINAL_HEIGHT}px)` }}>
+          <div style={styles.editorPane}>
             {fileManager.openFile ? (
               <ErrorBoundary name="Editor">
                 <Editor
@@ -185,7 +185,7 @@ export default function IDE() {
         </div>
 
         {panels.showPreview && (
-          <div style={{ ...styles.panel, width: PREVIEW_WIDTH, minWidth: 280 }}>
+          <div style={{ ...styles.panel, width: PREVIEW_WIDTH }}>
             <ErrorBoundary name="Preview">
               <Preview
                 terminalOutput={terminal.terminalOutput}
@@ -313,8 +313,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderRight: '1px solid rgba(255,255,255,0.55)',
     overflow: 'auto', flexShrink: 0,
   },
-  editorArea: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' },
-  editorPane: { overflow: 'hidden', flexShrink: 0 },
+  editorArea: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 320, position: 'relative' },
+  editorPane: { flex: 1, overflow: 'hidden', minHeight: 0 },
   terminalPanel: {
     borderTop: '1px solid rgba(255,255,255,0.25)',
     background: 'rgba(22,24,30,0.92)',
