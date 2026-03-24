@@ -80,8 +80,8 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
             return;
           }
 
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end('<html><body style="font-family:sans-serif;background:#0a0a0a;color:#00ff88;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><h2>✓ GitHub conectado! Volte ao Infinit Code.</h2></body></html>');
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="font-family:sans-serif;background:#0a0a0a;color:#00ff88;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><h2>&#10003; GitHub conectado! Volte ao Infinit Code.</h2></body></html>');
           server.close();
 
           const tokenRaw = await httpsPost({

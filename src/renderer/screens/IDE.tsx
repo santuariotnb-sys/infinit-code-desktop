@@ -12,6 +12,7 @@ import { useFileManager } from '../hooks/useFileManager';
 import { useTerminal } from '../hooks/useTerminal';
 import { usePanels } from '../hooks/usePanels';
 import { useGitPanel } from '../hooks/useGitPanel';
+import { useGitHub } from '../hooks/useGitHub';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
 const NOISE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E")`;
@@ -23,6 +24,7 @@ export default function IDE() {
     onPortDetected: () => panels.setShowPreview(true),
   });
   const gitPanel = useGitPanel();
+  const github = useGitHub({ onProjectOpen: fileManager.openProject });
 
   // Abre preview automaticamente quando porta é detectada
   useEffect(() => {
@@ -91,6 +93,43 @@ export default function IDE() {
                   onChange={fileManager.handleContentChange}
                 />
               </ErrorBoundary>
+            ) : !fileManager.projectPath ? (
+              <div style={styles.noFile}>
+                {github.isCloneMode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 320 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                      <button style={styles.emptyBtn} onClick={() => github.setIsCloneMode(false)}>← Voltar</button>
+                      <span style={{ fontSize: 13, color: '#8a8d96' }}>Escolha um repositório</span>
+                    </div>
+                    {github.isCloneLoading
+                      ? <p style={styles.noFileText}>Carregando repositórios...</p>
+                      : github.cloneRepos.length === 0
+                        ? <p style={styles.noFileText}>Nenhum repositório encontrado.</p>
+                        : github.cloneRepos.map((r, i) => (
+                            <button key={i} style={styles.emptyBtnRepo} onClick={() => github.handleCloneRepo(r)}>
+                              {String(r.fullName)}
+                            </button>
+                          ))
+                    }
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+                    <button style={styles.emptyBtnPrimary} onClick={fileManager.handleOpenFolder}>
+                      <svg width="14" height="12" viewBox="0 0 12 10" fill="none"><path d="M.5 2A1.5 1.5 0 0 1 2 .5h2.5L6 2H10A1.5 1.5 0 0 1 11.5 3.5v5A1.5 1.5 0 0 1 10 10H2A1.5 1.5 0 0 1 .5 8.5V2Z" stroke="#3CB043" strokeWidth="1" fill="none"/></svg>
+                      Abrir Pasta
+                    </button>
+                    <button style={styles.emptyBtn} onClick={github.handleShowClone} disabled={github.isCloneLoading}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v9M3 7l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M1 12h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                      Clonar Repositório
+                    </button>
+                    <button style={styles.emptyBtn} onClick={github.handleConnectGitHub}>
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+                      {github.ghStatus?.connected ? `GitHub: ${github.ghStatus.user || 'Conectado'}` : 'Conectar GitHub'}
+                      {github.ghStatus?.connected && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3CB043', display: 'inline-block', marginLeft: 4 }} />}
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <div style={styles.noFile}>
                 <p style={styles.noFileText}>Selecione um arquivo para editar</p>
@@ -223,6 +262,25 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'rgba(240,241,245,0.5)',
   },
   noFileText: { color: '#a8aab4', fontSize: 13, fontFamily: "'JetBrains Mono', monospace" },
+  emptyBtnPrimary: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'rgba(60,176,67,0.1)', border: '1px solid rgba(60,176,67,0.25)',
+    borderRadius: 10, padding: '10px 20px', cursor: 'pointer',
+    color: '#3CB043', fontSize: 13, fontWeight: 500,
+    fontFamily: "-apple-system, sans-serif", width: 220, justifyContent: 'center',
+  },
+  emptyBtn: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.4)',
+    borderRadius: 10, padding: '10px 20px', cursor: 'pointer',
+    color: '#5a5d66', fontSize: 13, fontWeight: 400,
+    fontFamily: "-apple-system, sans-serif", width: 220, justifyContent: 'center',
+  },
+  emptyBtnRepo: {
+    background: 'rgba(255,255,255,0.55)', border: 'none', borderRadius: 8,
+    padding: '10px 14px', cursor: 'pointer', color: '#3a3d45', fontSize: 12,
+    textAlign: 'left' as const, fontFamily: "'JetBrains Mono', monospace", width: '100%',
+  },
 
   // Status bar
   statusBar: {
