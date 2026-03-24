@@ -53,13 +53,13 @@ export default function Terminal() {
 
     term.open(containerRef.current);
 
-    // Small delay to ensure container is sized
-    setTimeout(() => {
-      fitAddon.fit();
-    }, 100);
-
     termRef.current = term;
     fitAddonRef.current = fitAddon;
+
+    // Start pty process, then fit
+    window.api.terminal.create().then(() => {
+      setTimeout(() => { fitAddon.fit(); }, 50);
+    });
 
     // Send user input to pty
     term.onData((data) => {
@@ -86,6 +86,7 @@ export default function Terminal() {
     return () => {
       cleanup();
       observer.disconnect();
+      window.api.terminal.kill();
       term.dispose();
       termRef.current = null;
     };
