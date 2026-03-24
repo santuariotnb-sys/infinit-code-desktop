@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface ToolbarProps {
   projectPath: string;
@@ -20,15 +20,37 @@ interface ToolbarProps {
   gitChangeCount: number;
   gitBranch?: string;
   livePort: number | null;
+  onLogout?: () => void;
 }
+
+const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
 
 export default function Toolbar({
   projectPath, fileName, modified, onSave, onOpenFolder,
   onTogglePreview, onToggleChat, onToggleGit, onToggleFileTree, onToggleTerminal, onRunDev,
   showPreview, showChat, showGit, showFileTree, showTerminal,
-  gitChangeCount, gitBranch = 'main', livePort,
+  gitChangeCount, gitBranch = 'main', livePort, onLogout,
 }: ToolbarProps) {
   const projectName = projectPath ? (projectPath.split('/').pop() || projectPath) : '';
+  const [session, setSession] = useState<{ name: string; avatar: string } | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    window.api.auth.getSession().then((s) => {
+      if (s) setSession({ name: s.name, avatar: s.avatar });
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   const pill = (active: boolean, green?: boolean): React.CSSProperties => ({
     display: 'flex',
@@ -156,17 +178,46 @@ export default function Toolbar({
         )}
       </div>
 
-      {/* Voice */}
-      <button style={pill(false)} title="Voz PT-BR">
-        <svg width="11" height="13" viewBox="0 0 11 13" fill="none"><rect x="3" y=".5" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.1" /><path d="M1 6.5C1 9 2.8 11 5.5 11s4.5-2 4.5-4.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" /><path d="M5.5 11v1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /></svg>
-        Voz
-      </button>
-
-      {/* ⌘K */}
-      <button style={pill(false)} title="Command Palette">
-        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.1" /><path d="M7.5 7.5l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
-        ⌘K
-      </button>
+      {/* User avatar + logout */}
+      {session && (
+        <div ref={userMenuRef} style={{ position: 'relative', flexShrink: 0, // @ts-expect-error no-drag
+          WebkitAppRegion: 'no-drag' }}>
+          <button
+            style={{ ...pill(false), padding: '3px 8px', gap: 7 }}
+            onClick={() => setShowUserMenu((v) => !v)}
+            title={session.name}
+          >
+            {session.avatar ? (
+              <img src={session.avatar} alt="" style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0 }} />
+            ) : (
+              <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#3CB043', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', flexShrink: 0 }}>
+                {session.name[0]?.toUpperCase()}
+              </span>
+            )}
+            <span style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{session.name.split(' ')[0]}</span>
+          </button>
+          {showUserMenu && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 999,
+              background: 'rgba(240,241,245,0.97)', backdropFilter: 'blur(20px)',
+              borderRadius: 10, minWidth: 140,
+              boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset, 0 8px 32px rgba(0,0,0,0.14)',
+              border: '1px solid rgba(255,255,255,0.5)',
+              overflow: 'hidden',
+            }}>
+              <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: '#1a1c20', fontFamily: '-apple-system, sans-serif' }}>{session.name}</div>
+              </div>
+              <button
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#d44', fontFamily: '-apple-system, sans-serif', textAlign: 'left' as const }}
+                onClick={() => { setShowUserMenu(false); onLogout?.(); }}
+              >
+                Sair
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <style>{`
         @keyframes tbPulse {
@@ -183,7 +234,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     height: 44,
-    padding: '0 14px',
+    padding: isMac ? '0 14px 0 80px' : '0 14px',
     background: 'rgba(220,223,229,0.85)',
     backdropFilter: 'blur(24px)',
     WebkitBackdropFilter: 'blur(24px)',

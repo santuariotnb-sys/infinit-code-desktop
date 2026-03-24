@@ -44,7 +44,7 @@ export default function App() {
       {isMac && screen !== 'splash' && <div className="titlebar-drag" />}
       {screen === 'splash' && <Splash />}
       {screen === 'login'  && <Login onLogin={() => setScreen('ide')} />}
-      {screen === 'ide'    && <IDE />}
+      {screen === 'ide'    && <IDE onLogout={async () => { await window.api.auth.logout(); setScreen('login'); }} />}
     </>
   );
 }

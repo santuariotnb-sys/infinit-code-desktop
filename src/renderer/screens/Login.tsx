@@ -58,6 +58,8 @@ export default function Login({ onLogin }: LoginProps) {
       const result = await window.api.auth.loginGoogle();
       if (result.ok) {
         onLogin();
+      } else if (result.error?.includes('não configurado')) {
+        setError('Login com Google ainda não disponível nesta versão. Use o GitHub.');
       } else {
         setError(result.error || 'Falha no login com Google.');
       }
