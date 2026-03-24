@@ -22,6 +22,8 @@ interface ToolbarProps {
   livePort: number | null;
   onLogout?: () => void;
   isChatStreaming?: boolean;
+  onOpenPalette?: () => void;
+  onOpenSettings?: () => void;
 }
 
 const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
@@ -31,6 +33,7 @@ export default function Toolbar({
   onTogglePreview, onToggleChat, onToggleGit, onToggleFileTree, onToggleTerminal, onRunDev,
   showPreview, showChat, showGit, showFileTree, showTerminal,
   gitChangeCount, gitBranch = 'main', livePort, onLogout, isChatStreaming,
+  onOpenPalette, onOpenSettings,
 }: ToolbarProps) {
   const projectName = projectPath ? (projectPath.split('/').pop() || projectPath) : '';
   const [session, setSession] = useState<{ name: string; avatar: string } | null>(null);
@@ -181,6 +184,60 @@ export default function Toolbar({
           <span style={{ color: '#3CB043', fontSize: 10 }}>●{gitChangeCount}</span>
         )}
       </div>
+
+      {/* Voice button */}
+      <button
+        style={{ ...pill(false), // @ts-expect-error no-drag
+          WebkitAppRegion: 'no-drag' }}
+        title="Voz PT-BR (⌘⇧V)"
+      >
+        <svg width="11" height="13" viewBox="0 0 11 13" fill="none">
+          <rect x="3" y=".5" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.1" />
+          <path d="M1 6.5C1 9 2.8 11 5.5 11s4.5-2 4.5-4.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" />
+          <path d="M5.5 11v1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+        </svg>
+        Voz
+      </button>
+
+      {/* Command palette pill */}
+      <button
+        style={{ ...pill(false), // @ts-expect-error no-drag
+          WebkitAppRegion: 'no-drag' }}
+        onClick={onOpenPalette}
+        title="⌘K"
+      >
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+          <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.1" />
+          <path d="M7.5 7.5l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+        ⌘K
+      </button>
+
+      <div style={sep} />
+
+      {/* Settings icon button */}
+      <button
+        onClick={onOpenSettings}
+        title="Configurações (⌘,)"
+        style={{
+          width: 28, height: 28,
+          background: 'transparent',
+          border: 'none',
+          borderRadius: 6,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer',
+          color: '#a8aab4',
+          transition: 'all .15s',
+          flexShrink: 0,
+          // @ts-expect-error no-drag
+          WebkitAppRegion: 'no-drag',
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="1.8" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M7 1v1.3M7 11.7V13M1 7h1.3M11.7 7H13M2.8 2.8l.9.9M10.3 10.3l.9.9M10.3 2.8l-.9.9M2.8 10.3l.9-.9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      </button>
 
       {/* User avatar + logout */}
       {session && (

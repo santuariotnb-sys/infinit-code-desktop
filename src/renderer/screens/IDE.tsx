@@ -8,6 +8,9 @@ import IntelliChat from '../components/IntelliChat';
 import AgentPanel from '../components/AgentPanel';
 import Toolbar from '../components/Toolbar';
 import GitPanel from '../components/GitPanel';
+import Toast from '../components/Toast';
+import CommandPalette from '../components/CommandPalette';
+import SettingsDrawer from '../components/SettingsDrawer';
 
 import { useFileManager } from '../hooks/useFileManager';
 import { useTerminal } from '../hooks/useTerminal';
@@ -15,6 +18,7 @@ import { usePanels } from '../hooks/usePanels';
 import { useGitPanel } from '../hooks/useGitPanel';
 import { useGitHub } from '../hooks/useGitHub';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useToast } from '../hooks/useToast';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
 const NOISE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E")`;
@@ -32,6 +36,9 @@ export default function IDE() {
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   type ChatTab = 'chat' | 'research' | 'agents';
   const [chatTab, setChatTab] = useState<ChatTab>('chat');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
+  const { toast, showToast: _showToast } = useToast();
 
   useKeyboardShortcuts({
     onSave: fileManager.handleSave,
@@ -39,6 +46,8 @@ export default function IDE() {
     onToggleFileTree: panels.toggleFileTree,
     onToggleChat: panels.toggleChat,
     onToggleGit: panels.toggleGit,
+    onOpenPalette: () => setShowPalette(true),
+    onOpenSettings: () => setShowSettings(true),
   });
 
   // Abre preview automaticamente quando porta é detectada
@@ -84,6 +93,8 @@ export default function IDE() {
         gitChangeCount={gitPanel.gitChangeCount}
         livePort={terminal.detectedPort}
         isChatStreaming={isChatStreaming}
+        onOpenPalette={() => setShowPalette(true)}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       <div style={styles.main}>
@@ -276,6 +287,21 @@ export default function IDE() {
           </div>
         )}
       </div>
+
+      <Toast msg={toast?.msg || null} />
+      <CommandPalette
+        open={showPalette}
+        onClose={() => setShowPalette(false)}
+        onToggleFileTree={panels.toggleFileTree}
+        onToggleChat={panels.toggleChat}
+        onTogglePreview={panels.togglePreview}
+        onToggleTerminal={() => terminal.setIsExpanded((v) => !v)}
+        onToggleGit={panels.toggleGit}
+        onRunDev={terminal.runDevServer}
+        onOpenSettings={() => setShowSettings(true)}
+        onOpenFolder={fileManager.handleOpenFolder}
+      />
+      <SettingsDrawer open={showSettings} onClose={() => setShowSettings(false)} />
 
       {/* Status bar */}
       <div style={styles.statusBar}>

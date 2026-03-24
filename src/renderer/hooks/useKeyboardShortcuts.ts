@@ -6,6 +6,8 @@ interface UseKeyboardShortcutsOptions {
   onToggleFileTree: () => void;
   onToggleChat: () => void;
   onToggleGit: () => void;
+  onOpenPalette?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -14,6 +16,8 @@ export function useKeyboardShortcuts({
   onToggleFileTree,
   onToggleChat,
   onToggleGit,
+  onOpenPalette,
+  onOpenSettings,
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -44,10 +48,18 @@ export function useKeyboardShortcuts({
             onToggleGit();
           }
           break;
+        case 'k':
+          e.preventDefault();
+          onOpenPalette?.();
+          break;
+        case ',':
+          e.preventDefault();
+          onOpenSettings?.();
+          break;
       }
     }
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onSave, onToggleTerminal, onToggleFileTree, onToggleChat, onToggleGit]);
+  }, [onSave, onToggleTerminal, onToggleFileTree, onToggleChat, onToggleGit, onOpenPalette, onOpenSettings]);
 }
