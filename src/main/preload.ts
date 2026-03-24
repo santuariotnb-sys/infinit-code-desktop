@@ -159,6 +159,8 @@ contextBridge.exposeInMainWorld('api', {
     loginGithub: () => ipcRenderer.invoke('auth:github'),
     loginGithubPat: (token: string) => ipcRenderer.invoke('auth:github-pat', token),
     loginGoogle: () => ipcRenderer.invoke('auth:google'),
+    saveGoogleCreds: (clientId: string, clientSecret: string) => ipcRenderer.invoke('auth:save-google-creds', clientId, clientSecret),
+    googleStatus: () => ipcRenderer.invoke('auth:google-status'),
     getSession: () => ipcRenderer.invoke('auth:session'),
     logout: () => ipcRenderer.invoke('auth:logout'),
   },

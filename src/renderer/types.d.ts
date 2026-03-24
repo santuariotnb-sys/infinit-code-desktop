@@ -88,6 +88,8 @@ interface ElectronAPI {
     loginGithub: () => Promise<{ ok: boolean; email?: string; name?: string; avatar?: string; provider?: string; error?: string }>;
     loginGithubPat: (token: string) => Promise<{ ok: boolean; email?: string; name?: string; avatar?: string; error?: string }>;
     loginGoogle: () => Promise<{ ok: boolean; email?: string; name?: string; avatar?: string; provider?: string; error?: string }>;
+    saveGoogleCreds: (clientId: string, clientSecret: string) => Promise<{ ok: boolean; error?: string }>;
+    googleStatus: () => Promise<{ configured: boolean }>;
     getSession: () => Promise<{ email: string; name: string; avatar: string; provider: 'google' | 'github' } | null>;
     logout: () => Promise<boolean>;
   };

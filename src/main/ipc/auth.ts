@@ -133,12 +133,29 @@ async function githubLoginFlow(): Promise<{ email: string; name: string; avatar:
 }
 
 // ── Google OAuth (porta 4245) ──────────────────────────────────────
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const GOOGLE_CREDS_FILE = path.join(os.homedir(), '.config', 'infinit-code', 'google-oauth.json');
 const GOOGLE_REDIRECT = 'http://localhost:4245/callback';
 
+function getGoogleCreds(): { clientId: string; clientSecret: string } | null {
+  // 1. Arquivo de config (~/.config/infinit-code/google-oauth.json)
+  try {
+    if (fs.existsSync(GOOGLE_CREDS_FILE)) {
+      const raw = JSON.parse(fs.readFileSync(GOOGLE_CREDS_FILE, 'utf-8'));
+      if (raw.client_id && raw.client_secret) return { clientId: raw.client_id, clientSecret: raw.client_secret };
+    }
+  } catch { /* ignore */ }
+  // 2. Variáveis de ambiente
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    return { clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET };
+  }
+  return null;
+}
+
 function googleLoginFlow(): Promise<{ email: string; name: string; avatar: string } | null> {
-  if (!GOOGLE_CLIENT_ID) return Promise.resolve(null);
+  const creds = getGoogleCreds();
+  if (!creds) return Promise.resolve(null);
+  const GOOGLE_CLIENT_ID = creds.clientId;
+  const GOOGLE_CLIENT_SECRET = creds.clientSecret;
 
   return new Promise((resolve) => {
     const server = http.createServer(async (req, res) => {
@@ -241,7 +258,7 @@ export function registerAuthHandlers(_mainWindow: BrowserWindow): void {
 
   ipcMain.handle('auth:google', async () => {
     try {
-      if (!GOOGLE_CLIENT_ID) return { ok: false, error: 'Google OAuth não configurado' };
+      if (!getGoogleCreds()) return { ok: false, error: 'not_configured' };
       const user = await googleLoginFlow();
       if (!user) return { ok: false, error: 'Login cancelado ou falhou' };
       store.set('session', { ...user, provider: 'google' });
@@ -249,6 +266,22 @@ export function registerAuthHandlers(_mainWindow: BrowserWindow): void {
     } catch (e) {
       return { ok: false, error: (e as Error).message };
     }
+  });
+
+  // Salva credenciais Google e testa imediatamente
+  ipcMain.handle('auth:save-google-creds', async (_evt, clientId: string, clientSecret: string) => {
+    try {
+      fs.mkdirSync(path.dirname(GOOGLE_CREDS_FILE), { recursive: true });
+      fs.writeFileSync(GOOGLE_CREDS_FILE, JSON.stringify({ client_id: clientId, client_secret: clientSecret }, null, 2), { mode: 0o600 });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  // Verifica se Google está configurado
+  ipcMain.handle('auth:google-status', () => {
+    return { configured: !!getGoogleCreds() };
   });
 
   ipcMain.handle('auth:session', () => {

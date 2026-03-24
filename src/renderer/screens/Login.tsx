@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const NOISE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E")`;
 
@@ -31,10 +31,18 @@ interface LoginProps {
 }
 
 export default function Login({ onLogin }: LoginProps) {
-  const [loading, setLoading] = useState<'github' | 'google' | 'pat' | null>(null);
+  const [loading, setLoading] = useState<'github' | 'google' | 'pat' | 'google-setup' | null>(null);
   const [error, setError] = useState('');
   const [showPat, setShowPat] = useState(false);
   const [pat, setPat] = useState('');
+  const [googleConfigured, setGoogleConfigured] = useState(false);
+  const [showGoogleSetup, setShowGoogleSetup] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleClientSecret, setGoogleClientSecret] = useState('');
+
+  useEffect(() => {
+    window.api.auth.googleStatus?.().then((s) => setGoogleConfigured(s.configured)).catch(() => {});
+  }, []);
 
   async function handleGitHub() {
     setLoading('github');
@@ -75,14 +83,13 @@ export default function Login({ onLogin }: LoginProps) {
   }
 
   async function handleGoogle() {
+    if (!googleConfigured) { setShowGoogleSetup(true); return; }
     setLoading('google');
     setError('');
     try {
       const result = await window.api.auth.loginGoogle();
       if (result.ok) {
         onLogin();
-      } else if (result.error?.includes('não configurado')) {
-        setError('Login com Google ainda não disponível nesta versão. Use o GitHub.');
       } else {
         setError(result.error || 'Falha no login com Google.');
       }
@@ -92,6 +99,39 @@ export default function Login({ onLogin }: LoginProps) {
       setLoading(null);
     }
   }
+
+  async function handleSaveGoogleCreds() {
+    if (!googleClientId.trim() || !googleClientSecret.trim()) return;
+    setLoading('google-setup');
+    setError('');
+    try {
+      const result = await window.api.auth.saveGoogleCreds?.(googleClientId.trim(), googleClientSecret.trim());
+      if (result?.ok) {
+        setGoogleConfigured(true);
+        setShowGoogleSetup(false);
+        // Iniciar login imediatamente
+        setLoading('google');
+        const loginResult = await window.api.auth.loginGoogle();
+        if (loginResult.ok) { onLogin(); return; }
+        setError(loginResult.error || 'Falha no login.');
+      } else {
+        setError(result?.error || 'Falha ao salvar credenciais.');
+      }
+    } catch {
+      setError('Erro ao salvar credenciais.');
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', borderRadius: 9,
+    border: '1px solid rgba(255,255,255,0.5)',
+    background: 'rgba(255,255,255,0.7)', fontSize: 12,
+    fontFamily: "'JetBrains Mono', monospace", color: '#1a1c20',
+    outline: 'none', boxSizing: 'border-box',
+    boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
+  };
 
   const glass: React.CSSProperties = {
     background: 'rgba(255,255,255,0.65)',
@@ -185,7 +225,7 @@ export default function Login({ onLogin }: LoginProps) {
                   disabled={loading !== null}
                 >
                   {GOOGLE_ICON}
-                  {loading === 'google' ? 'Aguardando Google...' : 'Entrar com Google'}
+                  {loading === 'google' ? 'Aguardando Google...' : googleConfigured ? 'Entrar com Google' : 'Configurar Google →'}
                 </button>
 
                 <button
@@ -242,6 +282,59 @@ export default function Login({ onLogin }: LoginProps) {
               </div>
             )}
           </div>
+
+          {/* Setup Google OAuth */}
+          {showGoogleSetup && (
+            <div style={{
+              marginTop: 16, padding: '16px', width: '100%',
+              background: 'rgba(255,255,255,0.6)', borderRadius: 12,
+              border: '1px solid rgba(255,255,255,0.5)',
+              display: 'flex', flexDirection: 'column', gap: 10,
+            }}>
+              <div style={{ fontSize: 12, color: '#3a3d45', fontWeight: 500 }}>Configurar Google OAuth</div>
+              <div style={{ fontSize: 11, color: '#8a8d96', lineHeight: 1.5 }}>
+                1. Acesse{' '}
+                <span
+                  style={{ color: '#3CB043', cursor: 'pointer' }}
+                  onClick={() => window.api.shell.openExternal('https://console.cloud.google.com/apis/credentials')}
+                >
+                  console.cloud.google.com/apis/credentials
+                </span>
+                <br />
+                2. Crie um OAuth 2.0 Client ID (tipo: <b>Web application</b>)<br />
+                3. Adicione <code style={{ background: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: 3 }}>http://localhost:4245/callback</code> em Redirect URIs<br />
+                4. Cole o Client ID e Secret abaixo:
+              </div>
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="Client ID (xxxxx.apps.googleusercontent.com)"
+                value={googleClientId}
+                onChange={(e) => setGoogleClientId(e.target.value)}
+              />
+              <input
+                style={inputStyle}
+                type="password"
+                placeholder="Client Secret"
+                value={googleClientSecret}
+                onChange={(e) => setGoogleClientSecret(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveGoogleCreds()}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  style={{ ...btn(false), flex: '0 0 80px', color: '#72757f', fontSize: 12 }}
+                  onClick={() => { setShowGoogleSetup(false); setError(''); }}
+                >← Voltar</button>
+                <button
+                  style={{ ...btn(loading === 'google-setup'), flex: 1, background: 'rgba(66,133,244,0.1)', border: '1px solid rgba(66,133,244,0.25)', color: '#4285F4' }}
+                  onClick={handleSaveGoogleCreds}
+                  disabled={loading !== null || !googleClientId.trim() || !googleClientSecret.trim()}
+                >
+                  {loading === 'google-setup' ? 'Salvando...' : 'Salvar e Entrar'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Erro */}
           {error && (
