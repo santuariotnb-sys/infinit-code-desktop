@@ -15,6 +15,9 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
   const [cloneRepos, setCloneRepos] = useState<GitRepo[]>([]);
   const [isCloneLoading, setIsCloneLoading] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  // Callback to run after auth succeeds (e.g., load repos immediately)
+  const [pendingAction, setPendingAction] = useState<'clone' | null>(null);
 
   useEffect(() => {
     window.api.github.authStatus()
@@ -22,26 +25,21 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
       .catch(() => setGhStatus({ connected: false }));
   }, []);
 
-  async function handleConnectGitHub() {
-    try {
-      await window.api.github.connectOAuth();
-      const s = await window.api.github.authStatus();
-      setGhStatus(s);
-    } catch (error) {
-      console.error('[useGitHub] connectOAuth falhou:', error);
+  // Called by GitHubAuthModal when auth succeeds
+  async function handleAuthConnected(user: string) {
+    const newStatus = { connected: true, user };
+    setGhStatus(newStatus);
+    setShowAuthModal(false);
+    if (pendingAction === 'clone') {
+      setPendingAction(null);
+      await loadRepos();
     }
   }
 
-  async function handleShowClone() {
+  async function loadRepos() {
     setIsCloneLoading(true);
     setCloneError(null);
     try {
-      if (!ghStatus?.connected) {
-        await window.api.github.connectOAuth();
-        const s = await window.api.github.authStatus();
-        setGhStatus(s);
-        if (!s.connected) { setIsCloneLoading(false); return; }
-      }
       const result = await window.api.github.listRepos();
       if (result?.error) {
         setCloneError(result.error as string);
@@ -49,13 +47,26 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
       } else {
         setCloneRepos((result?.repos || []) as GitRepo[]);
       }
-      setIsCloneMode(true);
     } catch (e) {
       setCloneError(String(e));
       setCloneRepos([]);
-      setIsCloneMode(true);
     }
     setIsCloneLoading(false);
+    setIsCloneMode(true);
+  }
+
+  function handleConnectGitHub() {
+    setShowAuthModal(true);
+    setPendingAction(null);
+  }
+
+  async function handleShowClone() {
+    if (!ghStatus?.connected) {
+      setPendingAction('clone');
+      setShowAuthModal(true);
+      return;
+    }
+    await loadRepos();
   }
 
   async function handleCloneRepo(repo: GitRepo) {
@@ -81,9 +92,12 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
     cloneRepos,
     cloneError,
     isCloneLoading,
+    showAuthModal,
+    setShowAuthModal,
     setIsCloneMode,
     handleConnectGitHub,
     handleShowClone,
     handleCloneRepo,
+    handleAuthConnected,
   };
 }

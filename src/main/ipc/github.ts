@@ -100,52 +100,79 @@ function safeSend(win: BrowserWindow, channel: string, payload: unknown) {
 
 export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
-  // ── OAuth connect ──────────────────────────────────────────
-  ipcMain.handle('github:connect-oauth', () => {
-    return new Promise<{ connected: boolean; username?: string; avatar_url?: string; error?: string }>((resolve) => {
-      const server = http.createServer(async (req, res) => {
+  // ── Device Flow: step 1 — request device code ─────────────
+  ipcMain.handle('github:device-flow-start', async () => {
+    try {
+      const raw = await httpsPost({
+        hostname: 'github.com',
+        path: '/login/device/code',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': 'Infinit-Code-Desktop' },
+      }, `client_id=${CLIENT_ID}&scope=repo%2Cuser`);
+      const data = JSON.parse(raw);
+      if (data.error) return { ok: false, error: data.error_description || data.error };
+      return {
+        ok: true,
+        userCode: data.user_code as string,
+        verificationUri: data.verification_uri as string,
+        deviceCode: data.device_code as string,
+        interval: (data.interval as number) || 5,
+        expiresIn: (data.expires_in as number) || 900,
+      };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
+  // ── Device Flow: step 2 — poll until authorized ────────────
+  ipcMain.handle('github:device-flow-poll', (_evt, deviceCode: string, intervalSecs: number) => {
+    return new Promise<{ connected: boolean; user?: string; error?: string }>((resolve) => {
+      let interval = intervalSecs * 1000;
+      let attempts = 0;
+      const maxAttempts = Math.floor(900 / intervalSecs) + 10;
+
+      async function poll() {
+        attempts++;
+        if (attempts > maxAttempts) { resolve({ connected: false, error: 'Expirou. Tente novamente.' }); return; }
         try {
-          const urlObj = new URL(req.url!, 'http://localhost:4242');
-          if (urlObj.pathname !== '/callback') { res.writeHead(404); res.end(); return; }
-
-          const code = urlObj.searchParams.get('code');
-          if (!code) {
-            res.writeHead(400); res.end('No code');
-            server.close();
-            resolve({ connected: false, error: 'No code received' });
-            return;
-          }
-
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="font-family:sans-serif;background:#0a0a0a;color:#00ff88;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><h2>&#10003; GitHub conectado! Volte ao Infinit Code.</h2></body></html>');
-          server.close();
-
-          const tokenRaw = await httpsPost({
+          const raw = await httpsPost({
             hostname: 'github.com',
             path: '/login/oauth/access_token',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': 'Infinit-Code-Desktop' },
-          }, `client_id=${CLIENT_ID}&code=${code}`);
+          }, `client_id=${CLIENT_ID}&device_code=${deviceCode}&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code`);
+          const data = JSON.parse(raw);
 
-          const tokenData = JSON.parse(tokenRaw);
-          const token: string = tokenData.access_token;
-          if (!token) { resolve({ connected: false, error: 'Token not received' }); return; }
-
-          await saveToken(token);
-
-          const userRaw = await httpsGet('https://api.github.com/user', token);
-          const user = JSON.parse(userRaw);
-          resolve({ connected: true, username: user.login, avatar_url: user.avatar_url });
+          if (data.access_token) {
+            await saveToken(data.access_token);
+            const userRaw = await httpsGet('https://api.github.com/user', data.access_token);
+            const user = JSON.parse(userRaw);
+            resolve({ connected: true, user: user.login });
+            return;
+          }
+          if (data.error === 'slow_down') { interval += 5000; }
+          if (data.error === 'expired_token') { resolve({ connected: false, error: 'Código expirou. Tente novamente.' }); return; }
+          if (data.error === 'access_denied') { resolve({ connected: false, error: 'Acesso negado pelo usuário.' }); return; }
+          // authorization_pending or slow_down → keep polling
+          safeSend(mainWindow, 'github:device-flow-progress', { waiting: true });
+          setTimeout(poll, interval);
         } catch (e) {
           resolve({ connected: false, error: String(e) });
         }
-      });
-
-      server.listen(4242, () => {
-        shell.openExternal(`https://github.com/login/oauth/authorize?client_id=${CLIENT_ID}&scope=repo,user`);
-      });
-      server.on('error', (e) => resolve({ connected: false, error: e.message }));
-      setTimeout(() => { server.close(); resolve({ connected: false, error: 'Timeout' }); }, 300_000);
+      }
+      poll();
     });
+  });
+
+  // ── PAT (Personal Access Token) direct save ────────────────
+  ipcMain.handle('github:save-pat', async (_evt, token: string) => {
+    try {
+      const userRaw = await httpsGet('https://api.github.com/user', token);
+      const user = JSON.parse(userRaw);
+      if (!user.login) return { ok: false, error: 'Token inválido' };
+      await saveToken(token);
+      return { ok: true, user: user.login };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
   });
 
   // ── Auth status ────────────────────────────────────────────

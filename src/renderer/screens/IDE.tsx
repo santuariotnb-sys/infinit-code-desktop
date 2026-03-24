@@ -11,6 +11,7 @@ import GitPanel from '../components/GitPanel';
 import Toast from '../components/Toast';
 import CommandPalette from '../components/CommandPalette';
 import SettingsDrawer from '../components/SettingsDrawer';
+import GitHubAuthModal from '../components/GitHubAuthModal';
 
 import { useFileManager } from '../hooks/useFileManager';
 import { useTerminal } from '../hooks/useTerminal';
@@ -353,6 +354,11 @@ export default function IDE() {
         onOpenFolder={fileManager.handleOpenFolder}
       />
       <SettingsDrawer open={showSettings} onClose={() => setShowSettings(false)} />
+      <GitHubAuthModal
+        open={github.showAuthModal}
+        onClose={() => github.setShowAuthModal(false)}
+        onConnected={github.handleAuthConnected}
+      />
 
       {/* Status bar */}
       <div style={styles.statusBar}>

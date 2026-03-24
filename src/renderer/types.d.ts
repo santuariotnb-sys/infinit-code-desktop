@@ -45,9 +45,13 @@ interface ElectronAPI {
   };
   github: {
     checkInstalled: () => Promise<{ installed: boolean; version?: string }>;
-    connectOAuth: () => Promise<{ connected: boolean; username?: string; avatar_url?: string; error?: string }>;
+    connectOAuth?: () => Promise<{ connected: boolean; username?: string; avatar_url?: string; error?: string }>;
+    deviceFlowStart?: () => Promise<{ ok?: boolean; userCode: string; verificationUri: string; deviceCode: string; interval: number; error?: string }>;
+    deviceFlowPoll?: (deviceCode: string, interval: number) => Promise<{ connected: boolean; user?: string; avatar?: string; error?: string; pending?: boolean }>;
+    savePat?: (token: string) => Promise<{ ok: boolean; user?: string; avatar?: string; error?: string }>;
     authStatus: () => Promise<{ connected: boolean; username?: string; avatar?: string }>;
     disconnect: () => Promise<{ ok: boolean }>;
+    onDeviceFlowProgress?: (cb: () => void) => () => void;
     clone: (repo: string, dest: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
     listRepos: () => Promise<{ repos: RepoInfo[]; error?: string }>;
     gitStatus: (cwd: string) => Promise<{ isRepo: boolean; branch: string; changes: GitChange[] }>;

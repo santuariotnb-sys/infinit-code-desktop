@@ -75,9 +75,17 @@ contextBridge.exposeInMainWorld('api', {
 
   github: {
     checkInstalled: () => ipcRenderer.invoke('github:check-installed'),
-    connectOAuth: () => ipcRenderer.invoke('github:connect-oauth'),
+    connectOAuth: () => Promise.resolve({ connected: false, error: 'deprecated' }), // kept for type compat
+    deviceFlowStart: () => ipcRenderer.invoke('github:device-flow-start'),
+    deviceFlowPoll: (deviceCode: string, interval: number) => ipcRenderer.invoke('github:device-flow-poll', deviceCode, interval),
+    savePat: (token: string) => ipcRenderer.invoke('github:save-pat', token),
     authStatus: () => ipcRenderer.invoke('github:auth-status'),
     disconnect: () => ipcRenderer.invoke('github:disconnect'),
+    onDeviceFlowProgress: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on('github:device-flow-progress', handler);
+      return () => ipcRenderer.removeListener('github:device-flow-progress', handler);
+    },
     clone: (repo: string, dest: string) => ipcRenderer.invoke('github:clone', repo, dest),
     listRepos: () => ipcRenderer.invoke('github:list-repos'),
     gitStatus: (cwd: string) => ipcRenderer.invoke('github:git-status', cwd),
