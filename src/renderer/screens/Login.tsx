@@ -31,8 +31,10 @@ interface LoginProps {
 }
 
 export default function Login({ onLogin }: LoginProps) {
-  const [loading, setLoading] = useState<'github' | 'google' | null>(null);
+  const [loading, setLoading] = useState<'github' | 'google' | 'pat' | null>(null);
   const [error, setError] = useState('');
+  const [showPat, setShowPat] = useState(false);
+  const [pat, setPat] = useState('');
 
   async function handleGitHub() {
     setLoading('github');
@@ -41,11 +43,32 @@ export default function Login({ onLogin }: LoginProps) {
       const result = await window.api.auth.loginGithub();
       if (result.ok) {
         onLogin();
+      } else if (result.error?.toLowerCase().includes('device_flow') || result.error?.toLowerCase().includes('device flow')) {
+        setShowPat(true);
+        setError('Device Flow não habilitado. Use um Personal Access Token:');
       } else {
         setError(result.error || 'Falha no login com GitHub.');
       }
     } catch {
       setError('Erro ao conectar com GitHub.');
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handlePat() {
+    if (!pat.trim()) return;
+    setLoading('pat');
+    setError('');
+    try {
+      const result = await window.api.auth.loginGithubPat(pat.trim());
+      if (result.ok) {
+        onLogin();
+      } else {
+        setError(result.error || 'Token inválido.');
+      }
+    } catch {
+      setError('Erro ao validar token.');
     } finally {
       setLoading(null);
     }
@@ -143,25 +166,81 @@ export default function Login({ onLogin }: LoginProps) {
 
           {/* Botões */}
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button
-              className="login-btn"
-              style={btn(loading === 'github')}
-              onClick={handleGitHub}
-              disabled={loading !== null}
-            >
-              {GITHUB_ICON}
-              {loading === 'github' ? 'Aguardando GitHub...' : 'Entrar com GitHub'}
-            </button>
+            {!showPat ? (
+              <>
+                <button
+                  className="login-btn"
+                  style={btn(loading === 'github')}
+                  onClick={handleGitHub}
+                  disabled={loading !== null}
+                >
+                  {GITHUB_ICON}
+                  {loading === 'github' ? 'Conectando...' : 'Entrar com GitHub'}
+                </button>
 
-            <button
-              className="login-btn"
-              style={btn(loading === 'google')}
-              onClick={handleGoogle}
-              disabled={loading !== null}
-            >
-              {GOOGLE_ICON}
-              {loading === 'google' ? 'Aguardando Google...' : 'Entrar com Google'}
-            </button>
+                <button
+                  className="login-btn"
+                  style={btn(loading === 'google')}
+                  onClick={handleGoogle}
+                  disabled={loading !== null}
+                >
+                  {GOOGLE_ICON}
+                  {loading === 'google' ? 'Aguardando Google...' : 'Entrar com Google'}
+                </button>
+
+                <button
+                  className="login-btn"
+                  style={{ ...btn(false), color: '#72757f', fontSize: 12, padding: '10px 20px' }}
+                  onClick={() => setShowPat(true)}
+                  disabled={loading !== null}
+                >
+                  Usar Personal Access Token →
+                </button>
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <input
+                  style={{
+                    width: '100%', padding: '12px 14px', borderRadius: 11,
+                    border: '1px solid rgba(255,255,255,0.5)',
+                    background: 'rgba(255,255,255,0.7)',
+                    fontSize: 13, fontFamily: "'JetBrains Mono', monospace",
+                    color: '#1a1c20', outline: 'none', boxSizing: 'border-box' as const,
+                    boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset',
+                  }}
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  value={pat}
+                  onChange={(e) => setPat(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handlePat()}
+                  autoFocus
+                />
+                <a
+                  href="#"
+                  style={{ fontSize: 11.5, color: '#3CB043', textDecoration: 'none', textAlign: 'center' as const }}
+                  onClick={(e) => { e.preventDefault(); window.api.shell.openExternal('https://github.com/settings/tokens/new?scopes=repo,user&description=Infinit+Code'); }}
+                >
+                  Criar token em github.com/settings/tokens →
+                </a>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="login-btn"
+                    style={{ ...btn(false), color: '#72757f', fontSize: 12, flex: '0 0 80px' }}
+                    onClick={() => { setShowPat(false); setError(''); setPat(''); }}
+                  >
+                    ← Voltar
+                  </button>
+                  <button
+                    className="login-btn"
+                    style={{ ...btn(loading === 'pat'), flex: 1, background: 'rgba(60,176,67,0.1)', border: '1px solid rgba(60,176,67,0.25)', color: '#3CB043' }}
+                    onClick={handlePat}
+                    disabled={loading !== null || !pat.trim()}
+                  >
+                    {loading === 'pat' ? 'Verificando...' : 'Entrar com Token'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Erro */}

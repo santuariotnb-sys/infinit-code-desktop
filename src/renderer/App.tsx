@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Splash from './screens/Splash';
+import Login  from './screens/Login';
 import IDE    from './screens/IDE';
 
-type Screen = 'splash' | 'ide';
+type Screen = 'splash' | 'login' | 'ide';
 
 const SPLASH_MIN_MS = 2300;
 
@@ -11,11 +12,23 @@ export default function App() {
 
   useEffect(() => {
     const splashStart = Date.now();
-    const elapsed   = Date.now() - splashStart;
-    const remaining = Math.max(0, SPLASH_MIN_MS - elapsed);
-    const t = setTimeout(() => setScreen('ide'), remaining);
+
+    async function bootCheck() {
+      const elapsed   = Date.now() - splashStart;
+      const remaining = Math.max(0, SPLASH_MIN_MS - elapsed);
+      await new Promise((r) => setTimeout(r, remaining));
+
+      try {
+        const session = await window.api.auth.getSession();
+        setScreen(session ? 'ide' : 'login');
+      } catch {
+        setScreen('login');
+      }
+    }
+
+    bootCheck();
     const cleanupSetup = window.api.setup.onComplete(() => {});
-    return () => { clearTimeout(t); cleanupSetup(); };
+    return cleanupSetup;
   }, []);
 
   const isMac = navigator.userAgent.includes('Mac');
@@ -24,6 +37,7 @@ export default function App() {
     <>
       {isMac && screen !== 'splash' && <div className="titlebar-drag" />}
       {screen === 'splash' && <Splash />}
+      {screen === 'login'  && <Login onLogin={() => setScreen('ide')} />}
       {screen === 'ide'    && <IDE />}
     </>
   );

@@ -200,12 +200,40 @@ function googleLoginFlow(): Promise<{ email: string; name: string; avatar: strin
 // ── IPC Handlers ───────────────────────────────────────────────────
 export function registerAuthHandlers(_mainWindow: BrowserWindow): void {
 
+  // Tenta usar token já salvo; se não houver, tenta Device Flow
   ipcMain.handle('auth:github', async () => {
     try {
+      // 1. Usa token já salvo (do PAT conectado no GitPanel)
+      const savedToken = fs.existsSync(GH_TOKEN_FILE) ? fs.readFileSync(GH_TOKEN_FILE, 'utf-8').trim() : '';
+      if (savedToken) {
+        const userRaw = await httpsGet('https://api.github.com/user', savedToken);
+        const user = JSON.parse(userRaw);
+        if (user.login) {
+          const session = { email: user.email || user.login, name: user.name || user.login, avatar: user.avatar_url || '', provider: 'github' as const };
+          store.set('session', session);
+          return { ok: true, ...session };
+        }
+      }
+      // 2. Sem token salvo — tenta Device Flow
       const user = await githubLoginFlow();
       if (!user) return { ok: false, error: 'Login cancelado ou falhou' };
       store.set('session', { ...user, provider: 'github' });
       return { ok: true, ...user, provider: 'github' };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  // Login via PAT — salva token e cria sessão
+  ipcMain.handle('auth:github-pat', async (_evt, token: string) => {
+    try {
+      const userRaw = await httpsGet('https://api.github.com/user', token);
+      const user = JSON.parse(userRaw);
+      if (!user.login) return { ok: false, error: 'Token inválido' };
+      saveGhTokenFile(token);
+      const session = { email: user.email || user.login, name: user.name || user.login, avatar: user.avatar_url || '', provider: 'github' as const };
+      store.set('session', session);
+      return { ok: true, ...session };
     } catch (e) {
       return { ok: false, error: (e as Error).message };
     }
