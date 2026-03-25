@@ -447,7 +447,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'absolute' as const,
     top: 'calc(100% + 6px)',
     left: 0,
-    zIndex: 999,
+    zIndex: 99999,
     background: 'rgba(240,241,245,0.97)',
     backdropFilter: 'blur(20px)',
     WebkitBackdropFilter: 'blur(20px)',
