@@ -12,102 +12,157 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
-  const isSupported = Boolean(SpeechRecognition);
+  const isSupported = Boolean(SpeechRecognition) || Boolean(navigator.mediaDevices?.getUserMedia);
 
   function clearError() {
     setVoiceError(null);
   }
 
-  async function handleVoiceToggle() {
-    if (!SpeechRecognition) {
-      setVoiceError('Web Speech API não disponível neste ambiente.');
-      return;
-    }
+  // Fallback: grava áudio via MediaRecorder e transcreve com Groq Whisper
+  async function startWhisperFallback(stream: MediaStream) {
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/ogg';
 
+    chunksRef.current = [];
+    const mr = new MediaRecorder(stream, { mimeType });
+    mediaRecorderRef.current = mr;
+
+    mr.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
+    mr.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      setIsListening(false);
+
+      if (chunksRef.current.length === 0) return;
+
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      const arrayBuffer = await blob.arrayBuffer();
+
+      setVoiceError('Transcrevendo...');
+      try {
+        const result = await window.api.aiProvider?.transcribe?.(arrayBuffer, 'pt');
+        if (result?.ok && result.text) {
+          setVoiceError(null);
+          onTranscript(result.text.trim());
+        } else {
+          setVoiceError(result?.error ?? 'Transcrição falhou. Configure a Groq API Key nas configurações.');
+        }
+      } catch (e) {
+        setVoiceError(`Erro na transcrição: ${(e as Error).message}`);
+      }
+    };
+
+    mr.start();
+    setIsListening(true);
+  }
+
+  async function handleVoiceToggle() {
+    // Parar se já está gravando
     if (isListening) {
       recognitionRef.current?.stop();
+      mediaRecorderRef.current?.stop();
       return;
     }
 
     setVoiceError(null);
 
-    // Pede permissão de microfone ao sistema operacional (macOS: aciona diálogo nativo)
+    // Solicita permissão ao macOS (aciona diálogo nativo se necessário)
     try {
       const perm = await window.api.media?.requestMicrophone?.();
       if (perm && !perm.granted) {
-        setVoiceError('Microfone bloqueado pelo sistema. Vá em Preferências do Sistema → Privacidade → Microfone e autorize o Infinit Code.');
+        setVoiceError('Microfone bloqueado. Autorize em Preferências do Sistema → Privacidade → Microfone.');
         return;
       }
-    } catch { /* ignora — prossegue para getUserMedia */ }
+    } catch { /* ignora — tenta getUserMedia mesmo assim */ }
 
-    // Testa acesso ao microfone via getUserMedia —
-    // isso aciona o diálogo de permissão do Electron / macOS se ainda não foi concedido
+    // Verifica acesso ao microfone via getUserMedia
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Para as tracks imediatamente — só precisávamos verificar acesso
-      stream.getTracks().forEach((t) => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      const msg = (err as DOMException).message ?? '';
-      if (msg.includes('Permission denied') || msg.includes('NotAllowedError') || (err as DOMException).name === 'NotAllowedError') {
-        setVoiceError('Microfone bloqueado. Vá em Preferências do Sistema → Privacidade → Microfone e autorize o Infinit Code.');
-      } else if ((err as DOMException).name === 'NotFoundError') {
+      const name = (err as DOMException).name;
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setVoiceError('Microfone bloqueado. Autorize em Preferências do Sistema → Privacidade → Microfone.');
+      } else if (name === 'NotFoundError') {
         setVoiceError('Nenhum microfone encontrado. Verifique se há um dispositivo de áudio conectado.');
       } else {
-        setVoiceError(`Erro ao acessar microfone: ${msg || (err as DOMException).name}`);
+        setVoiceError(`Erro ao acessar microfone: ${name}`);
       }
       return;
     }
 
-    const rec = new SpeechRecognition();
-    rec.lang = 'pt-BR';
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    rec.continuous = false;
+    // Tenta Web Speech API primeiro (não precisa de API key, mais rápido)
+    if (SpeechRecognition) {
+      stream.getTracks().forEach((t) => t.stop()); // libera stream — SpeechRecognition abre a própria
 
-    rec.onstart = () => setIsListening(true);
-    rec.onend = () => setIsListening(false);
+      const rec = new SpeechRecognition();
+      rec.lang = 'pt-BR';
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.continuous = false;
 
-    rec.onerror = (e: { error: string }) => {
-      setIsListening(false);
-      switch (e.error) {
-        case 'not-allowed':
+      rec.onstart = () => setIsListening(true);
+      rec.onend = () => setIsListening(false);
+
+      rec.onerror = async (e: { error: string }) => {
+        setIsListening(false);
+        if (e.error === 'service-not-allowed' || e.error === 'network') {
+          // Web Speech API bloqueada — usa fallback Groq Whisper
+          setVoiceError(null);
+          try {
+            const s2 = await navigator.mediaDevices.getUserMedia({ audio: true });
+            await startWhisperFallback(s2);
+          } catch {
+            setVoiceError('Não foi possível iniciar gravação. Verifique o microfone.');
+          }
+        } else if (e.error === 'not-allowed') {
           setVoiceError('Microfone bloqueado. Autorize em Preferências do Sistema → Privacidade → Microfone.');
-          break;
-        case 'service-not-allowed':
-          // Web Speech API usa servidores do Google — muitas vezes bloqueada em apps Electron
-          setVoiceError('Reconhecimento de voz indisponível neste app. Use ⌘⇧V para acionar a voz nativa do Claude.');
-          break;
-        case 'network':
-          setVoiceError('Sem conexão com o serviço de reconhecimento de voz. Verifique a internet.');
-          break;
-        case 'no-speech':
-          // Não é erro — apenas não detectou fala
-          break;
-        default:
+        } else if (e.error === 'no-speech') {
+          // Não é erro
+        } else {
           setVoiceError(`Erro de reconhecimento: ${e.error}`);
+        }
+      };
+
+      rec.onresult = (event: { results: { [x: number]: { [x: number]: { transcript: string } } } }) => {
+        const transcript = event.results[0][0].transcript;
+        onTranscript(transcript);
+      };
+
+      recognitionRef.current = rec;
+      try {
+        rec.start();
+      } catch {
+        // Web Speech falhou ao iniciar — vai direto para Whisper
+        setIsListening(false);
+        try {
+          const s2 = await navigator.mediaDevices.getUserMedia({ audio: true });
+          await startWhisperFallback(s2);
+        } catch {
+          setVoiceError('Não foi possível iniciar gravação. Verifique o microfone.');
+        }
       }
-    };
-
-    rec.onresult = (event: { results: { [x: number]: { [x: number]: { transcript: string } } } }) => {
-      const transcript = event.results[0][0].transcript;
-      onTranscript(transcript);
-    };
-
-    recognitionRef.current = rec;
-    try {
-      rec.start();
-    } catch (err) {
-      setIsListening(false);
-      setVoiceError(`Não foi possível iniciar o reconhecimento: ${(err as Error).message}`);
+    } else {
+      // Sem Web Speech API — usa Groq Whisper diretamente
+      await startWhisperFallback(stream);
     }
   }
 
-  // Parar reconhecimento ao desmontar — evita mic ativo em background
+  // Cleanup ao desmontar
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop();
       recognitionRef.current = null;
+      mediaRecorderRef.current?.stop();
+      mediaRecorderRef.current = null;
     };
   }, []);
 

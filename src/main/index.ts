@@ -8,6 +8,8 @@ import { registerClaudeHandlers } from './ipc/claude';
 import { registerGithubHandlers } from './ipc/github';
 import { registerLicenseHandlers } from './ipc/license';
 import { registerAuthHandlers } from './ipc/auth';
+import { registerSkillsHandlers } from './ipc/skills';
+import { registerAIProviderHandlers } from './ipc/aiProviders';
 import { runAutoSetup } from './services/auto-setup';
 import { initUpdater } from './services/updater';
 
@@ -26,6 +28,10 @@ if (process.platform === 'darwin' && app.isPackaged) {
     execSync(`xattr -rd com.apple.quarantine "${appBundle}"`, { timeout: 5000, stdio: 'ignore' });
   } catch { /* já limpo ou sem quarentena */ }
 }
+
+// Habilita Web Speech API — necessário para SpeechRecognition funcionar no Electron
+app.commandLine.appendSwitch('enable-features', 'WebSpeechAPI,AudioServiceOutOfProcess');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -52,6 +58,12 @@ function createWindow(): void {
       sandbox: false,
     },
   });
+
+  // Substitui o user-agent Electron por Chrome padrão —
+  // necessário para Web Speech API funcionar (Google bloqueia UA do Electron)
+  mainWindow.webContents.setUserAgent(
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+  );
 
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
 
@@ -97,7 +109,7 @@ function createWindow(): void {
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdn.jsdelivr.net; " +
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
         "font-src 'self' data: https://fonts.gstatic.com; " +
-        "connect-src 'self' https://api.anthropic.com https://*.supabase.co https://app-infinitcode.netlify.app https://www.google.com https://*.googleapis.com ws://localhost:* http://localhost:*; " +
+        "connect-src 'self' https://api.anthropic.com https://*.supabase.co https://app-infinitcode.netlify.app https://www.google.com https://*.googleapis.com https://generativelanguage.googleapis.com https://api.groq.com https://openrouter.ai ws://localhost:* http://localhost:*; " +
         "frame-src 'self' http://localhost:* http://127.0.0.1:*; " +
         "img-src 'self' data: https:;"
       ];
@@ -123,6 +135,8 @@ function createWindow(): void {
     registerGithubHandlers(mainWindow);
     registerLicenseHandlers(mainWindow);
     registerAuthHandlers(mainWindow);
+    registerSkillsHandlers(mainWindow);
+    registerAIProviderHandlers(mainWindow);
 
     ipcMain.handle('window:screenshot', async () => {
       try {

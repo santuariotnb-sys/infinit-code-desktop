@@ -124,6 +124,21 @@ interface ElectronAPI {
     logout: () => Promise<boolean>;
   };
   screenshot: () => Promise<string>;
+  aiProvider?: {
+    ask: (payload: { provider: string; model: string; prompt: string; systemPrompt?: string; history?: Array<{ role: string; content: string }> }) => Promise<unknown>;
+    cancel: () => Promise<{ ok: boolean }>;
+    transcribe?: (audioBuffer: ArrayBuffer, lang?: string) => Promise<{ ok: boolean; text?: string; error?: string }>;
+    saveKey: (provider: string, key: string) => Promise<{ ok: boolean }>;
+    getKey: (provider: string) => Promise<{ key: string | null }>;
+    models: () => Promise<unknown>;
+    onChunk: (cb: (data: { text: string }) => void) => () => void;
+    onError: (cb: (data: { message: string }) => void) => () => void;
+  };
+  skills?: {
+    load: (projectPath?: string) => Promise<unknown>;
+    list: (projectPath?: string) => Promise<unknown>;
+    save: (projectPath: string, id: string, content: string) => Promise<unknown>;
+  };
 }
 
 interface GitChange {

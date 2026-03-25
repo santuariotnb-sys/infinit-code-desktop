@@ -198,4 +198,32 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   screenshot: () => ipcRenderer.invoke('window:screenshot'),
+
+  skills: {
+    load: (projectPath?: string) => ipcRenderer.invoke('skills:load', projectPath),
+    list: (projectPath?: string) => ipcRenderer.invoke('skills:list', projectPath),
+    save: (projectPath: string, id: string, content: string) =>
+      ipcRenderer.invoke('skills:save', projectPath, id, content),
+  },
+
+  aiProvider: {
+    ask: (payload: { provider: string; model: string; prompt: string; systemPrompt?: string; history?: Array<{ role: string; content: string }> }) =>
+      ipcRenderer.invoke('aiProvider:ask', payload),
+    cancel: () => ipcRenderer.invoke('aiProvider:cancel'),
+    transcribe: (audioBuffer: ArrayBuffer, lang?: string) =>
+      ipcRenderer.invoke('aiProvider:transcribe', Buffer.from(audioBuffer), lang),
+    saveKey: (provider: string, key: string) => ipcRenderer.invoke('aiProvider:save-key', provider, key),
+    getKey: (provider: string) => ipcRenderer.invoke('aiProvider:get-key', provider),
+    models: () => ipcRenderer.invoke('aiProvider:models'),
+    onChunk: (cb: (data: { text: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, data: { text: string }) => cb(data);
+      ipcRenderer.on('aiProvider:chunk', handler);
+      return () => ipcRenderer.removeListener('aiProvider:chunk', handler);
+    },
+    onError: (cb: (data: { message: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, data: { message: string }) => cb(data);
+      ipcRenderer.on('aiProvider:error', handler);
+      return () => ipcRenderer.removeListener('aiProvider:error', handler);
+    },
+  },
 });
