@@ -5,6 +5,7 @@ import { useGitOperations } from '../hooks/useGitOperations';
 interface GitPanelProps {
   projectPath: string | null;
   onSyncProgress?: (msg: string) => void;
+  onSyncDone?: () => void;
   open: boolean;
   onClose: () => void;
   onConnect?: () => void;
@@ -21,13 +22,13 @@ const STATUS_BADGE: Record<string, { label: string; color: string }> = {
   U: { label: 'U', color: '#d93030' },
 };
 
-export default function GitPanel({ projectPath, onSyncProgress, open, onClose, onConnect, onChangesUpdate }: GitPanelProps) {
+export default function GitPanel({ projectPath, onSyncProgress, onSyncDone, open, onClose, onConnect, onChangesUpdate }: GitPanelProps) {
   const [commitMsg, setCommitMsg] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [showBranchInput, setShowBranchInput] = useState(false);
 
   const { branch, setBranch, branches, changes, localChangeCount, refreshStatus } = useGitStatus(projectPath);
-  const ops = useGitOperations({ projectPath, branch, onProgress: onSyncProgress, onRefresh: refreshStatus });
+  const ops = useGitOperations({ projectPath, branch, onProgress: onSyncProgress, onRefresh: refreshStatus, onSyncDone });
 
   useEffect(() => { onChangesUpdate?.(changes.length); }, [changes.length, onChangesUpdate]);
 

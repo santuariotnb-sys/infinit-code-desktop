@@ -395,12 +395,8 @@ export default function IDE() {
           open={panels.showGit}
           onClose={panels.toggleGit}
           projectPath={fileManager.projectPath}
-          onSyncProgress={(msg) => {
-            terminal.appendOutput(`[git] ${msg}`);
-            if (msg.includes('done') || msg.includes('pulled') || msg.includes('pushed')) {
-              triggerPreviewRefresh();
-            }
-          }}
+          onSyncProgress={(msg) => terminal.appendOutput(`[git] ${msg}`)}
+          onSyncDone={triggerPreviewRefresh}
           onConnect={() => github.setShowAuthModal(true)}
           onChangesUpdate={setGitChangeCount}
         />

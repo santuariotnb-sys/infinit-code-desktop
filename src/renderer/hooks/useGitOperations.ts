@@ -5,6 +5,7 @@ interface UseGitOperationsOptions {
   branch: string;
   onProgress?: (msg: string) => void;
   onRefresh?: () => Promise<void>;
+  onSyncDone?: () => void;
 }
 
 export function useGitOperations({
@@ -12,6 +13,7 @@ export function useGitOperations({
   branch,
   onProgress,
   onRefresh,
+  onSyncDone,
 }: UseGitOperationsOptions) {
   const [loading, setLoading] = useState(false);
   const [syncLog, setSyncLog] = useState('');
@@ -44,6 +46,7 @@ export function useGitOperations({
     setSyncLog('');
     await window.api.github.pull(projectPath, branch);
     await onRefresh?.();
+    onSyncDone?.();
     setLoading(false);
   }
 
@@ -52,6 +55,7 @@ export function useGitOperations({
     setLoading(true);
     setSyncLog('');
     await window.api.github.push(projectPath, branch);
+    onSyncDone?.();
     setLoading(false);
   }
 
@@ -61,6 +65,7 @@ export function useGitOperations({
     setSyncLog('');
     await window.api.github.sync(projectPath, branch);
     await onRefresh?.();
+    onSyncDone?.();
     setLoading(false);
   }
 
@@ -89,6 +94,8 @@ export function useGitOperations({
     setLoading(true);
     setSyncLog('');
     await window.api.github.sync(projectPath, branch);
+    await onRefresh?.();
+    onSyncDone?.();
     await window.api.shell.openExternal('https://lovable.dev');
     setLoading(false);
   }
