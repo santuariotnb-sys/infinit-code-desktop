@@ -181,19 +181,24 @@ function buildOpenAICompatRequest(
 const activeRequests = new Map<number, { cancelled: boolean }>();
 
 export function registerAIProviderHandlers(mainWindow: BrowserWindow): void {
-  // Salvar API key de um provider
-  ipcMain.handle('aiProvider:save-key', async (_event, provider: ProviderId, key: string) => {
+  // Salvar API key com validação de provider e formato mínimo
+  ipcMain.handle('aiProvider:save-key', async (_event, provider: string, key: string) => {
     try {
-      setSecret(`ai-provider-${provider}`, key);
+      if (!VALID_PROVIDERS.has(provider)) return { ok: false, error: 'Provider inválido' };
+      if (typeof key !== 'string' || key.trim().length < 10 || /\s/.test(key)) {
+        return { ok: false, error: 'Formato de API key inválido' };
+      }
+      setSecret(`ai-provider-${provider}`, key.trim());
       return { ok: true };
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
   });
 
-  // Ler API key armazenada
-  ipcMain.handle('aiProvider:get-key', async (_event, provider: ProviderId) => {
+  // Ler API key armazenada — valida provider antes
+  ipcMain.handle('aiProvider:get-key', async (_event, provider: string) => {
     try {
+      if (!VALID_PROVIDERS.has(provider)) return { ok: true, key: '' };
       const key = getSecret(`ai-provider-${provider}`);
       return { ok: true, key: key ?? '' };
     } catch {
@@ -206,6 +211,12 @@ export function registerAIProviderHandlers(mainWindow: BrowserWindow): void {
     return PROVIDER_MODELS;
   });
 
+  // Cancela request ativo se janela for destruída — evita memory leak
+  mainWindow.once('closed', () => {
+    const signal = activeRequests.get(mainWindow.id);
+    if (signal) { signal.cancelled = true; activeRequests.delete(mainWindow.id); }
+  });
+
   // Enviar prompt e receber resposta com streaming
   ipcMain.handle('aiProvider:ask', async (_event, payload: {
     provider: ProviderId;
@@ -214,8 +225,29 @@ export function registerAIProviderHandlers(mainWindow: BrowserWindow): void {
     systemPrompt?: string;
     history?: Array<{ role: string; content: string }>;
   }) => {
-    const { provider, model, prompt, systemPrompt = '', history = [] } = payload;
+    const { provider, model, systemPrompt = '', history = [] } = payload;
+    let prompt = payload.prompt;
     const windowId = mainWindow.id;
+
+    // ── Validação de entrada ──────────────────────────────────
+    if (!VALID_PROVIDERS.has(provider)) {
+      return { ok: false, error: `Provider inválido: ${provider}` };
+    }
+    if (!isValidModel(provider, model)) {
+      return { ok: false, error: `Modelo inválido para ${provider}: ${model}` };
+    }
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+      return { ok: false, error: 'Prompt não pode estar vazio' };
+    }
+    // Trunca prompt gigante ao invés de rejeitar — melhor UX
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      prompt = prompt.slice(0, MAX_PROMPT_CHARS) + '\n\n[... truncado ...]';
+    }
+    // Limita histórico a 10 mensagens para evitar payloads excessivos
+    const safeHistory = (Array.isArray(history) ? history : [])
+      .slice(-10)
+      .filter(m => typeof m?.role === 'string' && typeof m?.content === 'string')
+      .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content.slice(0, 4000) }));
 
     const apiKey = getSecret(`ai-provider-${provider}`) ?? '';
     if (!apiKey) {
@@ -225,17 +257,20 @@ export function registerAIProviderHandlers(mainWindow: BrowserWindow): void {
     const signal = { cancelled: false };
     activeRequests.set(windowId, signal);
 
+    const safeSend = (channel: string, data: unknown) => {
+      if (!signal.cancelled && !mainWindow.isDestroyed()) {
+        try { mainWindow.webContents.send(channel, data); } catch { /* janela destruída */ }
+      }
+    };
+
     return new Promise<{ ok: boolean; error?: string }>((resolve) => {
       const onChunk = (text: string) => {
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('aiProvider:chunk', { text });
-        }
+        if (signal.cancelled) return;
+        safeSend('aiProvider:chunk', { text });
       };
       const onError = (msg: string) => {
         activeRequests.delete(windowId);
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('aiProvider:error', { message: msg });
-        }
+        safeSend('aiProvider:error', { message: msg });
         resolve({ ok: false, error: msg });
       };
       const onDone = () => {
@@ -245,16 +280,16 @@ export function registerAIProviderHandlers(mainWindow: BrowserWindow): void {
 
       try {
         if (provider === 'gemini') {
-          const { hostname, path, headers, body } = buildGeminiRequest(model, apiKey, systemPrompt, prompt, history);
+          const { hostname, path, headers, body } = buildGeminiRequest(model, apiKey, systemPrompt, prompt, safeHistory);
           httpsPost(hostname, path, headers, body, onChunk, onError, onDone, signal);
         } else if (provider === 'groq') {
           const { hostname, path, headers, body } = buildOpenAICompatRequest(
-            'api.groq.com', '/openai/v1/chat/completions', apiKey, model, systemPrompt, prompt, history,
+            'api.groq.com', '/openai/v1/chat/completions', apiKey, model, systemPrompt, prompt, safeHistory,
           );
           httpsPost(hostname, path, headers, body, onChunk, onError, onDone, signal);
         } else if (provider === 'openrouter') {
           const { hostname, path, headers, body } = buildOpenAICompatRequest(
-            'openrouter.ai', '/api/v1/chat/completions', apiKey, model, systemPrompt, prompt, history,
+            'openrouter.ai', '/api/v1/chat/completions', apiKey, model, systemPrompt, prompt, safeHistory,
             { 'HTTP-Referer': 'https://app-infinitcode.netlify.app', 'X-Title': 'Infinit Code' },
           );
           httpsPost(hostname, path, headers, body, onChunk, onError, onDone, signal);
@@ -281,7 +316,7 @@ export function registerAIProviderHandlers(mainWindow: BrowserWindow): void {
   // Recebe áudio como Buffer (WebM/Opus gravado pelo MediaRecorder)
   // e envia para Groq Whisper API. Não depende do Web Speech API do Google.
   ipcMain.handle('aiProvider:transcribe', async (_event, audioBuffer: Buffer, lang = 'pt') => {
-    const apiKey = await getSecret('groq');
+    const apiKey = getSecret('ai-provider-groq');
     if (!apiKey) return { ok: false, error: 'Chave Groq não configurada. Adicione em Configurações → Groq API Key.' };
 
     const boundary = `----FormBoundary${Date.now().toString(16)}`;

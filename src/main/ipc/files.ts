@@ -181,6 +181,9 @@ export function registerFileHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('file:mkdir', async (_event, dirPath: string) => {
     try {
+      if (!isPathSafe(dirPath)) {
+        return { ok: false, error: 'Acesso negado a este caminho' };
+      }
       await fs.promises.mkdir(dirPath, { recursive: true });
       return { ok: true };
     } catch (error) {

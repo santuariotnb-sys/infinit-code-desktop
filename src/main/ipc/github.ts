@@ -14,11 +14,16 @@ function getToken(): string | null { return getSecret(GH_TOKEN_KEY); }
 function saveToken(token: string): void { setSecret(GH_TOKEN_KEY, token); }
 function deleteToken(): void { deleteSecret(GH_TOKEN_KEY); }
 
-// Escreve credenciais no git credential store para push/pull sem token
+// Escreve credenciais no git credential store para push/pull sem token.
+// Usa encodeURIComponent para evitar injeção via username/token com caracteres especiais.
 function setupGitCredentials(token: string, username: string): void {
   try {
+    // Valida que username e token não contêm newlines — previne injeção de linhas
+    if (/[\r\n]/.test(username) || /[\r\n]/.test(token)) return;
     const credPath = path.join(os.homedir(), '.git-credentials');
-    const line = `https://${username}:${token}@github.com`;
+    const safeUser = encodeURIComponent(username);
+    const safeToken = encodeURIComponent(token);
+    const line = `https://${safeUser}:${safeToken}@github.com`;
     const existing = fs.existsSync(credPath) ? fs.readFileSync(credPath, 'utf-8') : '';
     const filtered = existing.split('\n').filter((l) => !l.includes('github.com')).join('\n');
     fs.writeFileSync(credPath, filtered.trim() + '\n' + line + '\n', { mode: 0o600 });
@@ -127,7 +132,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
             resolve({ connected: true, user: user.login });
             return;
           }
-          if (data.error === 'slow_down') { interval += 5000; }
+          if (data.error === 'slow_down') { interval = Math.min(interval + 5000, 30_000); } // cap: 30s
           if (data.error === 'expired_token') { resolve({ connected: false, error: 'Código expirou. Tente novamente.' }); return; }
           if (data.error === 'access_denied') { resolve({ connected: false, error: 'Acesso negado pelo usuário.' }); return; }
           // authorization_pending or slow_down → keep polling

@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, shell } from 'electron';
 import http from 'http';
 import https from 'https';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -148,11 +149,19 @@ function getGoogleCreds(): { clientId: string; clientSecret: string } | null {
   return null;
 }
 
+// Escapa HTML para evitar XSS na página de callback
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c));
+}
+
 function googleLoginFlow(): Promise<{ email: string; name: string; avatar: string } | null> {
   const creds = getGoogleCreds();
   if (!creds) return Promise.resolve(null);
   const GOOGLE_CLIENT_ID = creds.clientId;
   const GOOGLE_CLIENT_SECRET = creds.clientSecret;
+
+  // CSRF: state token gerado por request, validado no callback
+  const csrfState = crypto.randomBytes(20).toString('hex');
 
   return new Promise((resolve) => {
     const server = http.createServer(async (req, res) => {
@@ -160,14 +169,22 @@ function googleLoginFlow(): Promise<{ email: string; name: string; avatar: strin
         const urlObj = new URL(req.url!, 'http://localhost:4245');
         if (urlObj.pathname !== '/callback') { res.writeHead(404); res.end(); return; }
 
+        // Rejeita se state não bater — previne CSRF
+        const returnedState = urlObj.searchParams.get('state');
+        if (returnedState !== csrfState) {
+          res.writeHead(400); res.end('State inválido');
+          server.close(); resolve(null); return;
+        }
+
         const code = urlObj.searchParams.get('code');
         if (!code) {
           res.writeHead(400); res.end('No code');
           server.close(); resolve(null); return;
         }
 
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end('<html><body style="font-family:sans-serif;background:#dde0e5;color:#1a1c20;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><h2 style="color:#3CB043">✓ Login realizado! Volte ao Infinit Code.</h2></body></html>');
+        // HTML de callback sem dados do usuário — evita XSS
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff' });
+        res.end('<!DOCTYPE html><html><body style="font-family:sans-serif;background:#dde0e5;color:#1a1c20;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><h2 style="color:#3CB043">&#10003; Login realizado! Volte ao Infinit Code.</h2></body></html>');
         server.close();
 
         const tokenRaw = await httpsPost({
@@ -188,7 +205,12 @@ function googleLoginFlow(): Promise<{ email: string; name: string; avatar: strin
         const userRaw = await httpsGet('https://www.googleapis.com/oauth2/v2/userinfo', access_token);
         const user = JSON.parse(userRaw);
 
-        resolve({ email: user.email, name: user.name, avatar: user.picture });
+        // Sanitiza campos do usuário antes de armazenar
+        resolve({
+          email: typeof user.email === 'string' ? escapeHtml(user.email) : '',
+          name: typeof user.name === 'string' ? escapeHtml(user.name) : '',
+          avatar: typeof user.picture === 'string' ? user.picture : '',
+        });
       } catch {
         resolve(null);
       }
@@ -202,6 +224,7 @@ function googleLoginFlow(): Promise<{ email: string; name: string; avatar: strin
         scope: 'email profile',
         access_type: 'offline',
         prompt: 'select_account',
+        state: csrfState, // CSRF token
       });
       shell.openExternal(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
     });
@@ -280,7 +303,8 @@ export function registerAuthHandlers(_mainWindow: BrowserWindow): void {
             store.set('session', session);
             resolve({ ok: true, ...session });
           } else if (data.error === 'slow_down') {
-            interval += 5000; setTimeout(poll, interval);
+            interval = Math.min(interval + 5000, 30_000); // cap 30s
+            setTimeout(poll, interval);
           } else if (data.error === 'authorization_pending') {
             setTimeout(poll, interval);
           } else if (data.error === 'expired_token') {

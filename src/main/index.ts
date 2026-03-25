@@ -164,6 +164,9 @@ function createWindow(): void {
         return { granted: false };
       }
     });
+
+    // Stub para updater:check — update-electron-app gerencia automático, sem necessidade de invoke manual
+    ipcMain.handle('updater:check', () => ({ ok: true }));
   }
 
   // Auto updater

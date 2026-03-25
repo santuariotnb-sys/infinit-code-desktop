@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { TIMEOUTS, CLAUDE_SEARCH_PATHS } from '../constants';
+import { getSecret, setSecret } from '../services/keychain';
 
 // Guarda session_id por janela para memória contínua
 const sessions = new Map<number, string>();
@@ -19,7 +20,7 @@ function findClaudeBinary(): string {
   try {
     const shell = process.env.SHELL || '/bin/bash';
     return execSync(`${shell} -lc "which claude"`, {
-      encoding: 'utf-8', timeout: 5000,
+      encoding: 'utf-8', timeout: 10_000,
     }).trim();
   } catch {
     return 'claude';
@@ -126,6 +127,8 @@ export function registerClaudeHandlers(mainWindow: BrowserWindow): void {
     const stopPolling = () => {
       resolved = true;
       if (nextCheckTimer) { clearTimeout(nextCheckTimer); nextCheckTimer = null; }
+      clearTimeout(globalTimeout);
+      mainWindow.removeListener('closed', stopPolling);
     };
 
     // Para polling se janela fechar — evita timer leak
@@ -447,5 +450,26 @@ Ao revisar e escrever código:
       proc.on('close', (code) => resolve({ installed: code === 0, version: version.trim() }));
       proc.on('error', () => resolve({ installed: false, version: null }));
     });
+  });
+
+  // ── Anthropic API Key (salvo no keychain) ────────────────
+  ipcMain.handle('claude:save-api-key', async (_event, key: string) => {
+    try {
+      await setSecret('anthropic', key);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('claude:get-api-key', async () => {
+    try {
+      const key = await getSecret('anthropic');
+      if (!key) return { configured: false, masked: '' };
+      const masked = key.length > 8 ? `${key.slice(0, 4)}...${key.slice(-4)}` : '****';
+      return { configured: true, masked };
+    } catch {
+      return { configured: false, masked: '' };
+    }
   });
 }

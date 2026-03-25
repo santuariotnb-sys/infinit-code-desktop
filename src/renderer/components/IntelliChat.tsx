@@ -1,13 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { basename } from '../utils/path';
 import { buildPrompt, estimateTokens, tokenColor, ChatContext, findRelevantPaths } from '../lib/buildPrompt';
 import { parseActionCards, getSuggestions, ActionCard } from '../lib/chatUtils';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { useFileAttachments } from '../hooks/useFileAttachments';
+import { useSkills } from '../hooks/useSkills';
 import ChatMessages from './IntelliChat/ChatMessages';
 import ChatInput from './IntelliChat/ChatInput';
 import ChatEmptyState from './IntelliChat/ChatEmptyState';
+
+type AIProvider = 'claude' | 'gemini' | 'groq' | 'openrouter';
+
+const PROVIDER_MODELS: Record<Exclude<AIProvider, 'claude'>, Array<{ id: string; label: string }>> = {
+  gemini: [
+    { id: 'gemini-2.0-flash', label: 'Flash 2.0 ⚡' },
+    { id: 'gemini-2.5-pro-preview-03-25', label: 'Pro 2.5' },
+    { id: 'gemini-1.5-flash', label: 'Flash 1.5' },
+  ],
+  groq: [
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B ⚡' },
+    { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B' },
+    { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B' },
+    { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1' },
+  ],
+  openrouter: [
+    { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
+    { id: 'anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
+    { id: 'deepseek/deepseek-r1', label: 'DeepSeek R1' },
+  ],
+};
 
 export interface IntelliChatProps {
   mode?: 'project' | 'research';
@@ -46,15 +69,35 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   const [actionCards, setActionCards] = useState<ActionCard[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showResults, setShowResults] = useState(true);
-  // Pergunta de aprovação — null = ainda não respondeu, true = sim, false = não
   const [approvalMode, setApprovalMode] = useState<boolean | null>(null);
   const [activeTool, setActiveTool] = useState<{ name: string; input: unknown } | null>(null);
   const [selectedModel, setSelectedModel] = useState<'sonnet' | 'haiku' | 'opus'>('sonnet');
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>('claude');
+  const [selectedExtModel, setSelectedExtModel] = useState<string>('gemini-2.0-flash');
+  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [keyInputValue, setKeyInputValue] = useState('');
+  const [savedKeys, setSavedKeys] = useState<Record<string, boolean>>({});
 
   const chat = useChatMessages();
   const voice = useVoiceInput({ onTranscript: (text) => setInput((prev) => prev ? `${prev} ${text}` : text) });
   const files = useFileAttachments({ projectPath, activeFile, inputValue: input, onInputChange: setInput });
-  const isSendingRef = React.useRef(false); // guard contra envios simultâneos
+  useSkills(projectPath); // carrega skills no boot
+  const isSendingRef = useRef(false);
+
+  // Verifica quais providers têm API key salva
+  useEffect(() => {
+    const providers: Array<Exclude<AIProvider, 'claude'>> = ['gemini', 'groq', 'openrouter'];
+    Promise.allSettled(providers.map(async (p) => {
+      const r = await (window.api as any).aiProvider?.getKey(p);
+      return { p, hasKey: !!(r?.key) };
+    })).then((results) => {
+      const keys: Record<string, boolean> = {};
+      for (const r of results) {
+        if (r.status === 'fulfilled') keys[r.value.p] = r.value.hasKey;
+      }
+      setSavedKeys(keys);
+    });
+  }, []);
 
   useEffect(() => { onStreamingChange?.(chat.isStreaming); }, [chat.isStreaming, onStreamingChange]);
 
@@ -139,34 +182,74 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     chat.startStreaming();
     isSendingRef.current = true;
 
-    const removeChunk = window.api.claude.onChunk?.((data) => chat.appendChunk(data.text)) ?? (() => {});
-    const removeTool  = window.api.claude.onTool?.((data) => setActiveTool(data)) ?? (() => {});
-    const removeError = window.api.claude.onError?.((data) => {
-      setActiveTool(null);
-      chat.finishStreaming(undefined, undefined, true);
-      chat.addSystemMessage(`⚠ ${data.message}`);
-      isSendingRef.current = false;
-    }) ?? (() => {});
+    if (selectedProvider === 'claude') {
+      // ── Fluxo Claude CLI ───────────────────────────────────────
+      const removeChunk = window.api.claude.onChunk?.((data) => chat.appendChunk(data.text)) ?? (() => {});
+      const removeTool  = window.api.claude.onTool?.((data) => setActiveTool(data)) ?? (() => {});
+      const removeError = window.api.claude.onError?.((data) => {
+        setActiveTool(null);
+        chat.finishStreaming(undefined, undefined, true);
+        chat.addSystemMessage(`⚠ ${data.message}`);
+        isSendingRef.current = false;
+      }) ?? (() => {});
 
-    try {
-      const MODEL_IDS = {
-        sonnet: 'claude-sonnet-4-6',
-        haiku:  'claude-haiku-4-5-20251001',
-        opus:   'claude-opus-4-6',
-      };
-      const result = await window.api.claude.ask?.({ prompt, cwd: ctx.cwd, sessionId: chat.sessionId ?? undefined, model: MODEL_IDS[selectedModel] });
-      chat.finishStreaming(result?.cost_usd, result?.sessionId);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro desconhecido';
-      // Sempre finaliza streaming antes de mostrar erro (evita UI travada)
-      chat.finishStreaming(undefined, undefined, true);
-      chat.addSystemMessage(`⚠ ${message}`);
-    } finally {
-      removeChunk();
-      removeTool();
-      removeError();
-      setActiveTool(null);
-      isSendingRef.current = false;
+      try {
+        const MODEL_IDS = {
+          sonnet: 'claude-sonnet-4-6',
+          haiku:  'claude-haiku-4-5-20251001',
+          opus:   'claude-opus-4-6',
+        };
+        const result = await window.api.claude.ask?.({ prompt, cwd: ctx.cwd, sessionId: chat.sessionId ?? undefined, model: MODEL_IDS[selectedModel] });
+        chat.finishStreaming(result?.cost_usd, result?.sessionId);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Erro desconhecido';
+        chat.finishStreaming(undefined, undefined, true);
+        chat.addSystemMessage(`⚠ ${message}`);
+      } finally {
+        removeChunk();
+        removeTool();
+        removeError();
+        setActiveTool(null);
+        isSendingRef.current = false;
+      }
+    } else {
+      // ── Fluxo API externa (Gemini / Groq / OpenRouter) ─────────
+      const removeChunk = (window.api as any).aiProvider?.onChunk?.((data: { text: string }) => chat.appendChunk(data.text)) ?? (() => {});
+      const removeError = (window.api as any).aiProvider?.onError?.((data: { message: string }) => {
+        chat.finishStreaming(undefined, undefined, true);
+        chat.addSystemMessage(`⚠ ${data.message}`);
+        isSendingRef.current = false;
+      }) ?? (() => {});
+
+      try {
+        const history = chat.messages
+          .filter(m => m.role !== 'system')
+          .slice(-6)
+          .map(m => ({ role: m.role as string, content: m.content }));
+
+        const result = await (window.api as any).aiProvider?.ask({
+          provider: selectedProvider,
+          model: selectedExtModel,
+          prompt,
+          history,
+        });
+
+        if (result && !result.ok && result.error) {
+          chat.finishStreaming(undefined, undefined, true);
+          chat.addSystemMessage(`⚠ ${result.error}`);
+        } else {
+          chat.finishStreaming();
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Erro desconhecido';
+        chat.finishStreaming(undefined, undefined, true);
+        chat.addSystemMessage(`⚠ ${message}`);
+      } finally {
+        removeChunk();
+        removeError();
+        setActiveTool(null);
+        isSendingRef.current = false;
+      }
     }
   }
 
@@ -209,6 +292,91 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         }
       }}
     >
+      {/* Provider selector */}
+      <div style={styles.providerBar}>
+        {(['claude', 'gemini', 'groq', 'openrouter'] as AIProvider[]).map((p) => (
+          <button
+            key={p}
+            onClick={() => {
+              setSelectedProvider(p);
+              if (p !== 'claude') {
+                const models = PROVIDER_MODELS[p as Exclude<AIProvider, 'claude'>];
+                setSelectedExtModel(models[0].id);
+              }
+              chat.clearSession();
+            }}
+            style={{
+              ...styles.providerBtn,
+              ...(selectedProvider === p ? styles.providerBtnActive : {}),
+            }}
+            title={p === 'claude' ? 'Claude Code CLI' : p.charAt(0).toUpperCase() + p.slice(1) + (savedKeys[p] ? ' ✓' : ' — configure API key')}
+          >
+            {p === 'claude' ? '∞ Claude' : p === 'gemini' ? '✦ Gemini' : p === 'groq' ? '⚡ Groq' : '◈ OpenRouter'}
+            {p !== 'claude' && !savedKeys[p] && <span style={{ color: '#d93030', marginLeft: 2, fontSize: 8 }}>●</span>}
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        {/* Modelo externo (quando não é Claude) */}
+        {selectedProvider !== 'claude' && (
+          <select
+            value={selectedExtModel}
+            onChange={(e) => setSelectedExtModel(e.target.value)}
+            style={styles.modelSelect}
+          >
+            {PROVIDER_MODELS[selectedProvider as Exclude<AIProvider, 'claude'>].map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
+        )}
+        {/* Config API key */}
+        {selectedProvider !== 'claude' && (
+          <button
+            onClick={() => {
+              setShowKeyInput(v => !v);
+              if (!showKeyInput) {
+                (window.api as any).aiProvider?.getKey(selectedProvider).then((r: { key: string }) => {
+                  setKeyInputValue(r?.key ?? '');
+                });
+              }
+            }}
+            style={{ ...styles.providerBtn, color: savedKeys[selectedProvider] ? '#3CB043' : '#888' }}
+            title="Configurar API key"
+          >⚙</button>
+        )}
+      </div>
+
+      {/* API key input */}
+      {showKeyInput && selectedProvider !== 'claude' && (
+        <div style={styles.keyInputBar}>
+          <span style={{ color: '#666', fontSize: 10, whiteSpace: 'nowrap' }}>API key {selectedProvider}:</span>
+          <input
+            type="password"
+            value={keyInputValue}
+            onChange={(e) => setKeyInputValue(e.target.value)}
+            placeholder="sk-..."
+            style={styles.keyInput}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                (window.api as any).aiProvider?.saveKey(selectedProvider, keyInputValue).then(() => {
+                  setSavedKeys(prev => ({ ...prev, [selectedProvider]: !!keyInputValue }));
+                  setShowKeyInput(false);
+                });
+              }
+              if (e.key === 'Escape') setShowKeyInput(false);
+            }}
+          />
+          <button
+            onClick={() => {
+              (window.api as any).aiProvider?.saveKey(selectedProvider, keyInputValue).then(() => {
+                setSavedKeys(prev => ({ ...prev, [selectedProvider]: !!keyInputValue }));
+                setShowKeyInput(false);
+              });
+            }}
+            style={{ ...styles.providerBtn, color: '#3CB043' }}
+          >salvar</button>
+        </div>
+      )}
+
       {/* Header */}
       <div style={styles.header}>
         <span style={styles.headerIcon}>∞</span>
@@ -280,7 +448,11 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         {chat.isStreaming && (
           <button
             onClick={async () => {
-              await window.api.claude.cancel?.();
+              if (selectedProvider === 'claude') {
+                await window.api.claude.cancel?.();
+              } else {
+                await (window.api as any).aiProvider?.cancel();
+              }
               setActiveTool(null);
               chat.finishStreaming(undefined, undefined, true);
               isSendingRef.current = false;
@@ -503,5 +675,62 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     cursor: 'pointer',
     fontFamily: 'inherit',
+  } as React.CSSProperties,
+  providerBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    padding: '4px 10px',
+    borderBottom: '1px solid #1e1e1e',
+    background: '#0d0d0d',
+    flexShrink: 0,
+  } as React.CSSProperties,
+  providerBtn: {
+    background: 'none',
+    border: '1px solid transparent',
+    color: '#555',
+    borderRadius: 4,
+    padding: '2px 7px',
+    fontSize: 10,
+    cursor: 'pointer',
+    fontFamily: 'monospace',
+    transition: 'all .12s',
+  } as React.CSSProperties,
+  providerBtnActive: {
+    background: 'rgba(0,255,136,0.08)',
+    border: '1px solid rgba(0,255,136,0.25)',
+    color: '#00ff88',
+  } as React.CSSProperties,
+  modelSelect: {
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    color: '#888',
+    borderRadius: 4,
+    padding: '2px 6px',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    cursor: 'pointer',
+    outline: 'none',
+    maxWidth: 140,
+  } as React.CSSProperties,
+  keyInputBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '5px 10px',
+    background: '#0d0d0d',
+    borderBottom: '1px solid #1e1e1e',
+    flexShrink: 0,
+  } as React.CSSProperties,
+  keyInput: {
+    flex: 1,
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    borderRadius: 4,
+    padding: '3px 8px',
+    color: '#888',
+    fontSize: 11,
+    outline: 'none',
+    fontFamily: 'monospace',
   } as React.CSSProperties,
 };

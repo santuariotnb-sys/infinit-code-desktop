@@ -1,3 +1,5 @@
+import { buildSkillBlock } from './skillSystem';
+
 export interface ChatContext {
   cwd: string;
   activeFile?: string;
@@ -109,6 +111,10 @@ export function buildPrompt(message: string, ctx: ChatContext): string {
 
   // 1. Instrução do sistema
   parts.push(SYSTEM_INSTRUCTION);
+
+  // 1b. Skills — injetadas automaticamente baseado na mensagem
+  const skillBlock = buildSkillBlock(message);
+  if (skillBlock) parts.push(skillBlock);
 
   // 2. Página visível no preview — ALVO PADRÃO para todos os pedidos
   if (ctx.previewPage) {
