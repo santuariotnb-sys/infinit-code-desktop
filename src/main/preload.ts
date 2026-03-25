@@ -153,6 +153,10 @@ contextBridge.exposeInMainWorld('api', {
     openExternal: (url: string) => ipcRenderer.invoke('shell:open', url),
   },
 
+  media: {
+    requestMicrophone: () => ipcRenderer.invoke('media:request-microphone'),
+  },
+
   setup: {
     onProgress: (cb: (data: { step: string; pct: number; msg: string; status: 'active' | 'done' | 'error' }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, d: { step: string; pct: number; msg: string; status: 'active' | 'done' | 'error' }) => cb(d);

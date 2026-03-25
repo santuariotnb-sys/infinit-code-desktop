@@ -102,6 +102,9 @@ interface ElectronAPI {
   shell: {
     openExternal: (url: string) => Promise<void>;
   };
+  media: {
+    requestMicrophone: () => Promise<{ granted: boolean }>;
+  };
   setup: {
     onProgress: (cb: (data: { step: string; pct: number; msg: string; status: 'active' | 'done' | 'error' }) => void) => () => void;
     onComplete: (cb: () => void) => () => void;

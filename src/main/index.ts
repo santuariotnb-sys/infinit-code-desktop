@@ -1,5 +1,5 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
-import { app, BrowserWindow, session, shell, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, session, shell, ipcMain, Menu, systemPreferences } from 'electron';
 import path from 'path';
 import { execSync } from 'child_process';
 import { registerTerminalHandlers } from './ipc/terminal';
@@ -97,7 +97,7 @@ function createWindow(): void {
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdn.jsdelivr.net; " +
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
         "font-src 'self' data: https://fonts.gstatic.com; " +
-        "connect-src 'self' https://api.anthropic.com https://*.supabase.co https://app-infinitcode.netlify.app ws://localhost:* http://localhost:*; " +
+        "connect-src 'self' https://api.anthropic.com https://*.supabase.co https://app-infinitcode.netlify.app https://www.google.com https://*.googleapis.com ws://localhost:* http://localhost:*; " +
         "frame-src 'self' http://localhost:* http://127.0.0.1:*; " +
         "img-src 'self' data: https:;"
       ];
@@ -135,6 +135,19 @@ function createWindow(): void {
       const parsed = new URL(url);
       if (['https:', 'http:'].includes(parsed.protocol)) {
         await shell.openExternal(url);
+      }
+    });
+
+    // Solicita permissão de microfone ao macOS — necessário para getUserMedia / Web Speech API
+    ipcMain.handle('media:request-microphone', async () => {
+      if (process.platform !== 'darwin') return { granted: true };
+      try {
+        const status = systemPreferences.getMediaAccessStatus('microphone');
+        if (status === 'granted') return { granted: true };
+        const granted = await systemPreferences.askForMediaAccess('microphone');
+        return { granted };
+      } catch {
+        return { granted: false };
       }
     });
   }

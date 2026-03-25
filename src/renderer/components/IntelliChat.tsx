@@ -387,6 +387,32 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         </div>
       )}
 
+      {voice.voiceError && (
+        <div
+          style={{
+            margin: '0 12px 6px',
+            padding: '7px 10px',
+            background: 'rgba(217,48,48,0.1)',
+            border: '1px solid rgba(217,48,48,0.3)',
+            borderRadius: 6,
+            fontSize: 11,
+            color: '#d93030',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 6,
+            lineHeight: 1.4,
+          }}
+        >
+          <span style={{ flexShrink: 0 }}>⚠</span>
+          <span style={{ flex: 1 }}>{voice.voiceError}</span>
+          <button
+            onClick={voice.clearError}
+            style={{ background: 'none', border: 'none', color: '#d93030', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, flexShrink: 0 }}
+            title="Fechar"
+          >×</button>
+        </div>
+      )}
+
       <ChatInput
         value={input}
         onChange={files.handleInputChange}
