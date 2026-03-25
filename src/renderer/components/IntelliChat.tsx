@@ -35,31 +35,12 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
 
   useEffect(() => { onStreamingChange?.(chat.isStreaming); }, [chat.isStreaming, onStreamingChange]);
 
-  // Verifica status e aquece a sessão Claude ao montar
+  // Verifica status ao montar
   useEffect(() => {
     window.api.claude.status?.().then((s) => {
       chat.setClaudeStatus(s.installed ? 'ready' : 'offline');
-      if (s.installed) warmSession();
     }).catch(() => chat.setClaudeStatus('offline'));
   }, []);
-
-  // Envia um ping silencioso para iniciar a sessão Claude (sem aparecer no chat)
-  async function warmSession() {
-    try {
-      const cwd = projectPath ?? (typeof process !== 'undefined' ? process.env.HOME ?? '~' : '~');
-      // Registra listener de chunk para descartar durante o warm-up
-      const removeChunk = window.api.claude.onChunk?.(() => {}) ?? (() => {});
-      const result = await window.api.claude.ask?.({
-        prompt: 'Responda apenas: ok.',
-        cwd,
-        sessionId: undefined,
-      });
-      removeChunk();
-      if (result?.sessionId) {
-        chat.finishStreaming(undefined, result.sessionId, true /* silent */);
-      }
-    } catch { /* ignora erro no warm-up */ }
-  }
 
   useEffect(() => {
     setActionCards(parseActionCards(terminalOutput));
@@ -134,7 +115,12 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     isSendingRef.current = true;
 
     const removeChunk = window.api.claude.onChunk?.((data) => chat.appendChunk(data.text)) ?? (() => {});
-    const removeTool = window.api.claude.onTool?.(() => {}) ?? (() => {});
+    const removeTool  = window.api.claude.onTool?.(() => {}) ?? (() => {});
+    const removeError = window.api.claude.onError?.((data) => {
+      chat.finishStreaming(undefined, undefined, true);
+      chat.addSystemMessage(`⚠ ${data.message}`);
+      isSendingRef.current = false;
+    }) ?? (() => {});
 
     try {
       const result = await window.api.claude.ask?.({ prompt, cwd: ctx.cwd, sessionId: chat.sessionId ?? undefined });
@@ -147,6 +133,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     } finally {
       removeChunk();
       removeTool();
+      removeError();
       isSendingRef.current = false;
     }
   }

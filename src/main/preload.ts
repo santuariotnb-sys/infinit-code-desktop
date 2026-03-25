@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('claude:ask', payload),
     clearSession: () => ipcRenderer.invoke('claude:clear-session'),
     status: () => ipcRenderer.invoke('claude:status'),
+    saveApiKey: (key: string) => ipcRenderer.invoke('claude:save-api-key', key),
+    getApiKey: () => ipcRenderer.invoke('claude:get-api-key'),
     onInstallProgress: (cb: (data: { pct: number; msg: string }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, d: { pct: number; msg: string }) => cb(d);
       ipcRenderer.on('claude:install-progress', handler);

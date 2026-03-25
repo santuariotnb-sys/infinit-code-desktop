@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings } from '../hooks/useSettings';
 
 interface SettingsDrawerProps {
@@ -47,6 +47,32 @@ const GROUPS: SettingsGroup[] = [
 ];
 
 export default function SettingsDrawer({ open, onClose, settings, onUpdate }: SettingsDrawerProps) {
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [apiKeyMasked, setApiKeyMasked] = useState('');
+  const [apiKeySaving, setApiKeySaving] = useState(false);
+  const [apiKeyMsg, setApiKeyMsg] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      window.api.claude.getApiKey?.().then((r) => setApiKeyMasked(r.configured ? r.masked : ''));
+    }
+  }, [open]);
+
+  async function handleSaveApiKey() {
+    if (!apiKeyInput.trim()) return;
+    setApiKeySaving(true);
+    setApiKeyMsg('');
+    const r = await window.api.claude.saveApiKey?.(apiKeyInput.trim());
+    setApiKeySaving(false);
+    if (r?.ok) {
+      setApiKeyMsg('Chave salva!');
+      setApiKeyInput('');
+      setApiKeyMasked(`sk-ant-...${apiKeyInput.trim().slice(-4)}`);
+    } else {
+      setApiKeyMsg('Erro ao salvar.');
+    }
+    setTimeout(() => setApiKeyMsg(''), 3000);
+  }
   const togStyle = (on: boolean): React.CSSProperties => ({
     width: 34,
     height: 18,
@@ -129,6 +155,40 @@ export default function SettingsDrawer({ open, onClose, settings, onUpdate }: Se
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
+
+        {/* API Key section */}
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#a8aab4', fontFamily: "'JetBrains Mono', monospace", marginBottom: 10 }}>
+            Anthropic API Key
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.5)', borderRadius: 8, padding: '10px 11px', boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset', display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+            {apiKeyMasked && (
+              <div style={{ fontSize: 11, color: '#3CB043', fontFamily: 'monospace' }}>✓ {apiKeyMasked}</div>
+            )}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="password"
+                placeholder="sk-ant-api03-..."
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveApiKey()}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 5, padding: '4px 8px', fontSize: 11, fontFamily: 'monospace', color: '#3a3d45', outline: 'none' }}
+              />
+              <button
+                onClick={handleSaveApiKey}
+                disabled={apiKeySaving || !apiKeyInput.trim()}
+                style={{ background: 'rgba(60,176,67,0.12)', border: '1px solid rgba(60,176,67,0.3)', borderRadius: 5, padding: '4px 10px', fontSize: 11, color: '#3CB043', cursor: 'pointer', fontWeight: 500, opacity: apiKeyInput.trim() ? 1 : 0.5 }}
+              >
+                {apiKeySaving ? '…' : 'Salvar'}
+              </button>
+            </div>
+            {apiKeyMsg && <div style={{ fontSize: 10, color: apiKeyMsg.includes('Erro') ? '#d93030' : '#3CB043' }}>{apiKeyMsg}</div>}
+            <div style={{ fontSize: 10, color: '#a8aab4', lineHeight: 1.5 }}>
+              Obtida em console.anthropic.com — armazenada criptografada no sistema.
+            </div>
+          </div>
+        </div>
+
         {GROUPS.map((group) => (
           <div key={group.title} style={{ marginBottom: 22 }}>
             <div style={{

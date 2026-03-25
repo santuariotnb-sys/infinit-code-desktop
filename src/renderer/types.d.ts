@@ -44,10 +44,12 @@ interface ElectronAPI {
     writeVoiceSettings: () => Promise<{ ok: boolean }>;
     onInstallProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
     onAuthenticated: (cb: () => void) => () => void;
-    status?: () => Promise<{ installed: boolean; version: string | null }>;
+    status?: () => Promise<{ installed: boolean; version: string | null; hasSdkKey?: boolean; mode?: 'sdk' | 'cli' }>;
     ask?: (payload: { prompt: string; cwd: string; sessionId?: string }) =>
       Promise<{ ok: boolean; sessionId: string | null; cost_usd: number; chunks: object[] }>;
     clearSession?: () => Promise<{ ok: boolean }>;
+    saveApiKey?: (key: string) => Promise<{ ok: boolean; error?: string }>;
+    getApiKey?: () => Promise<{ configured: boolean; masked: string }>;
     onChunk?: (cb: (data: { text: string }) => void) => () => void;
     onTool?: (cb: (data: { name: string; input: unknown }) => void) => () => void;
     onError?: (cb: (data: { message: string }) => void) => () => void;
