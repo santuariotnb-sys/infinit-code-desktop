@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 type ViewportSize = 'mobile' | 'tablet' | 'desktop';
 
@@ -28,6 +28,39 @@ const SERVER_REGEXES = [
 
 const HMR_REGEXES = [/HMR/, /Fast Refresh/, /reloaded/i, /hot update/i];
 const ERROR_REGEXES = [/EADDRINUSE/, /Cannot find module/i, /SyntaxError:/i];
+
+// Arquivos candidatos a conter rotas
+const ROUTER_CANDIDATES = [
+  'src/App.tsx', 'src/App.jsx', 'src/app.tsx', 'src/app.jsx',
+  'src/router.tsx', 'src/router.jsx', 'src/routes.tsx', 'src/routes.jsx',
+  'src/router/index.tsx', 'src/router/index.jsx',
+  'app/routes.ts', 'app/routes.tsx',
+];
+
+function extractRoutes(content: string): string[] {
+  const paths = new Set<string>();
+
+  // path="..." ou path={'...'} (JSX)
+  for (const m of content.matchAll(/path=["'`]([^"'`]+)["'`]/g)) {
+    const p = m[1].trim();
+    if (p && p.startsWith('/')) paths.add(p);
+  }
+
+  // { path: "..." } (createBrowserRouter / createHashRouter)
+  for (const m of content.matchAll(/path:\s*["'`]([^"'`]+)["'`]/g)) {
+    const p = m[1].trim();
+    if (p && p.startsWith('/')) paths.add(p);
+  }
+
+  // Ordena: "/" primeiro, depois alfabético
+  const sorted = Array.from(paths).sort((a, b) => {
+    if (a === '/') return -1;
+    if (b === '/') return 1;
+    return a.localeCompare(b);
+  });
+
+  return sorted;
+}
 
 // SVG icons
 function IconMobile() {
@@ -74,6 +107,13 @@ function IconExternal() {
     </svg>
   );
 }
+function IconChevron() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
 
 interface PreviewProps {
   terminalOutput?: string;
@@ -95,12 +135,61 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   const [draftPath, setDraftPath] = useState('/');
   const [iframeRetries, setIframeRetries] = useState(0);
 
+  // Rotas detectadas do router do projeto
+  const [routes, setRoutes] = useState<string[]>([]);
+  const [showRoutesPicker, setShowRoutesPicker] = useState(false);
+  const routesPickerRef = useRef<HTMLDivElement>(null);
+
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const probeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detectedPortRef = useRef<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const autoStartedRef = useRef(false);
+
+  // ── Detecta rotas do arquivo de roteamento do projeto ──
+  const detectRoutes = useCallback(async () => {
+    if (!projectPath) return;
+    for (const rel of ROUTER_CANDIDATES) {
+      const result = await window.api.files.read(`${projectPath}/${rel}`);
+      if (!result?.ok || !result.data) continue;
+      const found = extractRoutes(result.data);
+      if (found.length > 0) {
+        setRoutes(found);
+        return;
+      }
+    }
+    setRoutes([]);
+  }, [projectPath]);
+
+  // Atualiza rotas quando projeto muda ou arquivo de roteamento muda
+  useEffect(() => {
+    detectRoutes();
+  }, [detectRoutes]);
+
+  // Escuta mudanças de arquivo — re-detecta rotas se for o arquivo de router
+  useEffect(() => {
+    if (!projectPath) return;
+    const cleanup = window.api.files.onChanged((changedPath: string) => {
+      const rel = changedPath.replace(projectPath + '/', '');
+      if (ROUTER_CANDIDATES.includes(rel)) {
+        detectRoutes();
+      }
+    });
+    return cleanup;
+  }, [projectPath, detectRoutes]);
+
+  // Fecha dropdown ao clicar fora
+  useEffect(() => {
+    if (!showRoutesPicker) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (routesPickerRef.current && !routesPickerRef.current.contains(e.target as Node)) {
+        setShowRoutesPicker(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showRoutesPicker]);
 
   // Auto-start dev server quando projeto abre — SÓ se node_modules instalado
   useEffect(() => {
@@ -121,6 +210,8 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
       setDraftPath('/');
       setServerError(false);
       setIframeRetries(0);
+      setRoutes([]);
+      setShowRoutesPicker(false);
     }
   }, [projectPath]);
 
@@ -229,6 +320,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     setCurrentPath(normalized);
     setDraftPath(normalized);
     setEditingPath(false);
+    setShowRoutesPicker(false);
     setIframeKey(k => k + 1);
   }
 
@@ -254,30 +346,63 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
         {/* Status dot */}
         <div style={{ ...s.dot, background: dotColor }} title={!port ? 'Aguardando servidor' : status} />
 
-        {/* Address bar */}
-        <div
-          style={{ ...s.addressBar, borderColor: editingPath ? 'rgba(255,255,255,0.15)' : 'transparent' }}
-          onClick={() => { if (!editingPath) { setEditingPath(true); setDraftPath(currentPath); } }}
-        >
-          {editingPath ? (
-            <input
-              autoFocus
-              style={s.addressInput}
-              value={draftPath}
-              onChange={e => setDraftPath(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') navigateTo(draftPath);
-                if (e.key === 'Escape') setEditingPath(false);
-              }}
-              onBlur={() => setEditingPath(false)}
-            />
-          ) : port ? (
-            <span style={s.addressText}>
-              <span style={s.addressHost}>localhost:{port}</span>
-              <span style={s.addressPath}>{currentPath}</span>
-            </span>
-          ) : (
-            <span style={s.addressPlaceholder}>Aguardando servidor…</span>
+        {/* Address bar com dropdown de rotas */}
+        <div style={s.addressAreaWrap} ref={routesPickerRef}>
+          <div
+            style={{ ...s.addressBar, borderColor: editingPath ? 'rgba(255,255,255,0.15)' : 'transparent' }}
+            onClick={() => { if (!editingPath) { setEditingPath(true); setDraftPath(currentPath); setShowRoutesPicker(false); } }}
+          >
+            {editingPath ? (
+              <input
+                autoFocus
+                style={s.addressInput}
+                value={draftPath}
+                onChange={e => setDraftPath(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') navigateTo(draftPath);
+                  if (e.key === 'Escape') setEditingPath(false);
+                }}
+                onBlur={() => setEditingPath(false)}
+              />
+            ) : port ? (
+              <span style={s.addressText}>
+                <span style={s.addressHost}>localhost:{port}</span>
+                <span style={s.addressPath}>{currentPath}</span>
+              </span>
+            ) : (
+              <span style={s.addressPlaceholder}>Aguardando servidor…</span>
+            )}
+          </div>
+
+          {/* Botão de rotas — só aparece se detectou rotas */}
+          {routes.length > 0 && (
+            <button
+              style={{ ...s.routesBtn, background: showRoutesPicker ? 'rgba(255,255,255,0.06)' : 'transparent' }}
+              onClick={() => { setShowRoutesPicker(v => !v); setEditingPath(false); }}
+              title="Páginas detectadas"
+            >
+              <IconChevron />
+            </button>
+          )}
+
+          {/* Dropdown de rotas */}
+          {showRoutesPicker && routes.length > 0 && (
+            <div style={s.routesDropdown}>
+              {routes.map(route => (
+                <button
+                  key={route}
+                  style={{
+                    ...s.routeItem,
+                    background: currentPath === route ? 'rgba(34,197,94,0.08)' : 'transparent',
+                    color: currentPath === route ? '#22c55e' : '#ccc',
+                  }}
+                  onClick={() => navigateTo(route)}
+                >
+                  <span style={s.routeItemText}>{route}</span>
+                  {currentPath === route && <span style={s.routeCheck}>✓</span>}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
@@ -399,6 +524,14 @@ const s: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     transition: 'background 0.3s',
   },
+  addressAreaWrap: {
+    flex: 1,
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    minWidth: 0,
+  },
   addressBar: {
     flex: 1,
     display: 'flex',
@@ -411,6 +544,7 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'text',
     transition: 'border-color 0.15s',
     overflow: 'hidden',
+    minWidth: 0,
   },
   addressInput: {
     flex: 1,
@@ -440,6 +574,57 @@ const s: Record<string, React.CSSProperties> = {
   addressPlaceholder: {
     color: '#333',
     fontSize: 11,
+  },
+  routesBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    color: '#555',
+    cursor: 'pointer',
+    padding: '4px 5px',
+    borderRadius: 4,
+    flexShrink: 0,
+    transition: 'background 0.15s, color 0.15s',
+  },
+  routesDropdown: {
+    position: 'absolute',
+    top: 'calc(100% + 4px)',
+    left: 0,
+    right: 0,
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    borderRadius: 8,
+    overflow: 'hidden',
+    zIndex: 100,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+    maxHeight: 260,
+    overflowY: 'auto',
+  },
+  routeItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '7px 12px',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    textAlign: 'left',
+    transition: 'background 0.1s',
+  },
+  routeItemText: {
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  routeCheck: {
+    color: '#22c55e',
+    fontSize: 11,
+    marginLeft: 8,
+    flexShrink: 0,
   },
   iconBtn: {
     display: 'flex',
