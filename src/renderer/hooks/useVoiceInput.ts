@@ -29,7 +29,12 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
 
     rec.onstart = () => setIsListening(true);
     rec.onend = () => setIsListening(false);
-    rec.onerror = () => setIsListening(false);
+    rec.onerror = (e: { error: string }) => {
+      setIsListening(false);
+      if (e.error === 'not-allowed') {
+        console.warn('[voice] Microfone negado. Verifique as permissões do sistema (Preferências → Privacidade → Microfone).');
+      }
+    };
 
     rec.onresult = (event: { results: { [x: number]: { [x: number]: { transcript: string } } } }) => {
       const transcript = event.results[0][0].transcript;

@@ -106,6 +106,14 @@ function createWindow(): void {
     callback({ responseHeaders: headers });
   });
 
+  // Permite acesso ao microfone para Web Speech API (chat voice input)
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'media');
+  });
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    return permission === 'media';
+  });
+
   // Register IPC handlers only once (guard against window re-creation on activate)
   if (!handlersRegistered) {
     handlersRegistered = true;
