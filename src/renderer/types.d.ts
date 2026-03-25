@@ -14,6 +14,13 @@ interface ElectronAPI {
     onData: (cb: (data: string) => void) => () => void;
     onInject?: (cb: (text: string) => void) => () => void;
     onExit?: (cb: () => void) => () => void;
+    ghost: {
+      create: (cwd: string) => Promise<{ ok: boolean; error?: string }>;
+      write: (data: string) => Promise<{ ok: boolean }>;
+      kill: () => Promise<{ ok: boolean }>;
+      onData: (cb: (data: string) => void) => () => void;
+      onExit: (cb: () => void) => () => void;
+    };
   };
   files: {
     read: (filePath: string) => Promise<{ ok: boolean; data?: string; error?: string }>;

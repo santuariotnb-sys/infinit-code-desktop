@@ -81,8 +81,8 @@ export default function IDE() {
     if (fileManager.projectPath) panels.setShowPreview(true);
   }, [fileManager.projectPath]);
 
-  // runDevServer com package manager correto
-  const runDev = () => terminal.runDevServer(fileManager.pkgManager);
+  // runDevServer com package manager correto — usa ghost terminal (cwd obrigatório)
+  const runDev = () => terminal.runDevServer(fileManager.pkgManager, fileManager.projectPath ?? undefined);
 
   useEffect(() => {
     if (terminal.detectedPort) panels.setShowPreview(true);
@@ -269,7 +269,7 @@ export default function IDE() {
                 <div style={{ flex: 1, overflow: 'hidden' }}>
                   <ErrorBoundary name="Preview">
                     <Preview
-                      terminalOutput={terminal.terminalOutput}
+                      terminalOutput={terminal.ghostOutput}
                       onRunDev={runDev}
                       projectPath={fileManager.projectPath}
                       hasNodeModules={fileManager.hasNodeModules}

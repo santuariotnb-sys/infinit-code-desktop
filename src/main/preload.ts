@@ -21,6 +21,21 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('terminal:exit', handler);
       return () => ipcRenderer.removeListener('terminal:exit', handler);
     },
+    ghost: {
+      create: (cwd: string) => ipcRenderer.invoke('terminal:ghost:create', cwd),
+      write: (data: string) => ipcRenderer.invoke('terminal:ghost:write', data),
+      kill: () => ipcRenderer.invoke('terminal:ghost:kill'),
+      onData: (cb: (data: string) => void) => {
+        const handler = (_: Electron.IpcRendererEvent, d: string) => cb(d);
+        ipcRenderer.on('terminal:ghost:data', handler);
+        return () => ipcRenderer.removeListener('terminal:ghost:data', handler);
+      },
+      onExit: (cb: () => void) => {
+        const handler = () => cb();
+        ipcRenderer.on('terminal:ghost:exit', handler);
+        return () => ipcRenderer.removeListener('terminal:ghost:exit', handler);
+      },
+    },
   },
 
   files: {
