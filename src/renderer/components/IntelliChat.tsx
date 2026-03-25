@@ -292,68 +292,121 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         }
       }}
     >
-      {/* Provider selector */}
-      <div style={styles.providerBar}>
+      {/* ── Row 1: Identity + status ──────────────────────────────── */}
+      <div style={styles.headerRow}>
+        <span style={styles.logo}>∞</span>
+        <span style={styles.title}>{mode === 'research' ? 'Pesquisa' : 'IntelliChat'}</span>
+        <div style={styles.statusGroup}>
+          <div style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            background: chat.claudeStatus === 'ready' ? D.accent
+              : chat.claudeStatus === 'thinking' ? '#f0a020'
+              : chat.claudeStatus === 'offline' ? D.error : D.textDim,
+          }} />
+          <span style={styles.statusLabel}>
+            {chat.claudeStatus === 'checking' ? 'verificando' : chat.claudeStatus === 'ready' ? 'pronto'
+              : chat.claudeStatus === 'thinking' ? 'pensando…' : 'offline'}
+          </span>
+          {chat.claudeStatus === 'offline' && selectedProvider === 'claude' && (
+            <button onClick={() => onTerminalInject('claude --dangerously-skip-permissions\r')} style={styles.microBtn}>iniciar →</button>
+          )}
+        </div>
+        <span style={styles.projectBadge}>{projectPath ? basename(projectPath) : 'sem projeto'}</span>
+        {projectContext && !isIndexing && (
+          <button onClick={onReindex} style={styles.microBtn} title={`${Math.round(projectContext.length / 1000)}KB — reindexar`}>⊕</button>
+        )}
+        {isIndexing && <span style={styles.indexingLabel}>indexando…</span>}
+        <div style={{ flex: 1 }} />
+        {chat.isStreaming && (
+          <button
+            onClick={async () => {
+              if (selectedProvider === 'claude') { await window.api.claude.cancel?.(); }
+              else { await (window.api as any).aiProvider?.cancel(); }
+              setActiveTool(null);
+              chat.finishStreaming(undefined, undefined, true);
+              isSendingRef.current = false;
+            }}
+            style={styles.stopBtn}
+          >■ parar</button>
+        )}
+        {chat.messages.length > 0 && (
+          <button onClick={chat.clearMessages} style={styles.iconBtn} title="Nova conversa">↺</button>
+        )}
+      </div>
+
+      {/* ── Row 2: Provider tabs + model + toggles ────────────────── */}
+      <div style={styles.controlRow}>
         {(['claude', 'gemini', 'groq', 'openrouter'] as AIProvider[]).map((p) => (
           <button
             key={p}
             onClick={() => {
               setSelectedProvider(p);
-              if (p !== 'claude') {
-                const models = PROVIDER_MODELS[p as Exclude<AIProvider, 'claude'>];
-                setSelectedExtModel(models[0].id);
-              }
+              if (p !== 'claude') setSelectedExtModel(PROVIDER_MODELS[p as Exclude<AIProvider, 'claude'>][0].id);
               chat.clearSession();
             }}
-            style={{
-              ...styles.providerBtn,
-              ...(selectedProvider === p ? styles.providerBtnActive : {}),
-            }}
-            title={p === 'claude' ? 'Claude Code CLI' : p.charAt(0).toUpperCase() + p.slice(1) + (savedKeys[p] ? ' ✓' : ' — configure API key')}
+            style={{ ...styles.provTab, ...(selectedProvider === p ? styles.provTabActive : {}) }}
+            title={p === 'claude' ? 'Claude Code CLI' : `${p} ${savedKeys[p] ? '✓ configurado' : '— sem API key'}`}
           >
-            {p === 'claude' ? '∞ Claude' : p === 'gemini' ? '✦ Gemini' : p === 'groq' ? '⚡ Groq' : '◈ OpenRouter'}
-            {p !== 'claude' && !savedKeys[p] && <span style={{ color: '#d93030', marginLeft: 2, fontSize: 8 }}>●</span>}
+            {p === 'claude' ? '∞' : p === 'gemini' ? '✦' : p === 'groq' ? '⚡' : '◈'}
+            {' '}{p === 'claude' ? 'Claude' : p === 'openrouter' ? 'OR' : p.charAt(0).toUpperCase() + p.slice(1)}
+            {p !== 'claude' && !savedKeys[p] && <span style={{ color: D.error, marginLeft: 2, fontSize: 7 }}>●</span>}
           </button>
         ))}
-        <div style={{ flex: 1 }} />
-        {/* Modelo externo (quando não é Claude) */}
-        {selectedProvider !== 'claude' && (
-          <select
-            value={selectedExtModel}
-            onChange={(e) => setSelectedExtModel(e.target.value)}
-            style={styles.modelSelect}
-          >
+        <div style={styles.divider} />
+        {selectedProvider === 'claude' ? (
+          <div style={styles.modelTabs}>
+            {([
+              { key: 'haiku',  label: 'Haiku',  title: '⚡ Rápido · Haiku 4.5' },
+              { key: 'sonnet', label: 'Sonnet', title: '⚖ Equilibrado · Sonnet 4.6' },
+              { key: 'opus',   label: 'Opus',   title: '🎯 Máximo · Opus 4.6' },
+            ] as const).map(({ key: m, label, title }) => (
+              <button
+                key={m}
+                onClick={() => { if (m !== selectedModel) { setSelectedModel(m); chat.clearSession(); } }}
+                style={{ ...styles.modelTab, ...(selectedModel === m ? styles.modelTabActive : {}) }}
+                title={title}
+              >{label}</button>
+            ))}
+          </div>
+        ) : (
+          <select value={selectedExtModel} onChange={(e) => setSelectedExtModel(e.target.value)} style={styles.modelSelect}>
             {PROVIDER_MODELS[selectedProvider as Exclude<AIProvider, 'claude'>].map(m => (
               <option key={m.id} value={m.id}>{m.label}</option>
             ))}
           </select>
         )}
-        {/* Config API key */}
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={() => setApprovalMode((prev) => prev === true ? false : true)}
+          style={{ ...styles.pillBtn, ...(approvalMode === true ? styles.pillBtnWarn : {}) }}
+          title={approvalMode === true ? 'Aprovação ativa' : 'Execução direta'}
+        >{approvalMode === true ? '✓ aprovação' : '⚡ direto'}</button>
+        <button
+          onClick={() => setShowResults((v) => !v)}
+          style={{ ...styles.pillBtn, ...(showResults ? styles.pillBtnOn : {}) }}
+          title={showResults ? 'Ocultar respostas' : 'Mostrar respostas'}
+        >{showResults ? '◉' : '○'}</button>
         {selectedProvider !== 'claude' && (
           <button
             onClick={() => {
               setShowKeyInput(v => !v);
-              if (!showKeyInput) {
-                (window.api as any).aiProvider?.getKey(selectedProvider).then((r: { key: string }) => {
-                  setKeyInputValue(r?.key ?? '');
-                });
-              }
+              if (!showKeyInput) (window.api as any).aiProvider?.getKey(selectedProvider).then((r: { key: string }) => setKeyInputValue(r?.key ?? ''));
             }}
-            style={{ ...styles.providerBtn, color: savedKeys[selectedProvider] ? '#3CB043' : '#888' }}
+            style={{ ...styles.iconBtn, color: savedKeys[selectedProvider] ? D.accent : D.textDim }}
             title="Configurar API key"
           >⚙</button>
         )}
       </div>
 
-      {/* API key input */}
+      {/* ── API key input (collapsible) ───────────────────────────── */}
       {showKeyInput && selectedProvider !== 'claude' && (
-        <div style={styles.keyInputBar}>
-          <span style={{ color: '#666', fontSize: 10, whiteSpace: 'nowrap' }}>API key {selectedProvider}:</span>
+        <div style={styles.keyBar}>
+          <span style={styles.keyLabel}>API key · {selectedProvider}</span>
           <input
             type="password"
             value={keyInputValue}
             onChange={(e) => setKeyInputValue(e.target.value)}
-            placeholder="sk-..."
+            placeholder="sk-…"
             style={styles.keyInput}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -366,154 +419,52 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
             }}
           />
           <button
-            onClick={() => {
-              (window.api as any).aiProvider?.saveKey(selectedProvider, keyInputValue).then(() => {
-                setSavedKeys(prev => ({ ...prev, [selectedProvider]: !!keyInputValue }));
-                setShowKeyInput(false);
-              });
-            }}
-            style={{ ...styles.providerBtn, color: '#3CB043' }}
+            onClick={() => (window.api as any).aiProvider?.saveKey(selectedProvider, keyInputValue).then(() => { setSavedKeys(prev => ({ ...prev, [selectedProvider]: !!keyInputValue })); setShowKeyInput(false); })}
+            style={styles.saveKeyBtn}
           >salvar</button>
         </div>
       )}
 
-      {/* Header */}
-      <div style={styles.header}>
-        <span style={styles.headerIcon}>∞</span>
-        <span style={styles.headerTitle}>{mode === 'research' ? 'Pesquisa' : 'IntelliChat'}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: chat.claudeStatus === 'ready' ? '#3CB043' : chat.claudeStatus === 'thinking' ? '#f0a020' : chat.claudeStatus === 'offline' ? '#d93030' : '#a8aab4', flexShrink: 0 }} />
-          <span style={{ fontSize: 10, color: '#555', fontFamily: 'monospace' }}>
-            {chat.claudeStatus === 'checking' ? 'Verificando...' : chat.claudeStatus === 'ready' ? 'pronto' : chat.claudeStatus === 'thinking' ? 'pensando...' : 'offline'}
-          </span>
-          {chat.claudeStatus === 'offline' && (
-            <button onClick={() => onTerminalInject('claude --dangerously-skip-permissions\r')} style={{ fontSize: 9, color: '#3CB043', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>iniciar →</button>
-          )}
-        </div>
-        <span style={styles.projectBadge}>{projectPath ? basename(projectPath) : 'sem projeto'}</span>
-        {projectContext && !isIndexing && (
-          <button
-            onClick={onReindex}
-            style={{ fontSize: 9, color: '#3CB043', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.7 }}
-            title={`Contexto indexado (${Math.round(projectContext.length / 1000)}KB) — clique para reindexar`}
-          >⊕</button>
-        )}
-        {isIndexing && (
-          <span style={{ fontSize: 9, color: '#f0a020', fontFamily: 'monospace' }}>indexando…</span>
-        )}
-        {/* Seletor de modelo */}
-        <div style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.06)', borderRadius: 5, padding: 2 }}>
-          {([
-            { key: 'haiku',  label: 'Haiku 4.5',   title: '⚡ Mais rápido · Haiku 4.5' },
-            { key: 'sonnet', label: 'Sonnet 4.6',  title: '⚖ Tarefas do dia a dia · Sonnet 4.6' },
-            { key: 'opus',   label: 'Opus 4.6',    title: '🎯 Máximo · Opus 4.6 · 1M contexto' },
-          ] as const).map(({ key: m, label, title }) => (
-            <button
-              key={m}
-              onClick={() => {
-                if (m === selectedModel) return;
-                setSelectedModel(m);
-                // Sessão antiga usa o modelo com que foi criada — ao trocar,
-                // limpa para que a próxima mensagem inicie uma nova sessão
-                chat.clearSession();
-              }}
-              style={{
-                background: selectedModel === m ? 'rgba(60,176,67,0.15)' : 'transparent',
-                border: selectedModel === m ? '1px solid rgba(60,176,67,0.3)' : '1px solid transparent',
-                color: selectedModel === m ? '#3CB043' : '#888',
-                borderRadius: 3, padding: '1px 5px', fontSize: 9,
-                cursor: 'pointer', fontFamily: 'monospace', transition: 'all .12s',
-              }}
-              title={title}
-            >{label}</button>
-          ))}
-        </div>
-        <button
-          onClick={() => setApprovalMode((prev) => prev === true ? false : true)}
-          style={{
-            background: approvalMode === true ? 'rgba(240,160,32,0.12)' : 'none',
-            border: approvalMode === true ? '1px solid rgba(240,160,32,0.3)' : '1px solid transparent',
-            color: approvalMode === true ? '#f0a020' : '#444',
-            borderRadius: 4, padding: '2px 6px', fontSize: 9,
-            cursor: 'pointer', fontFamily: 'monospace',
-            transition: 'all .15s',
-          }}
-          title={approvalMode === true ? 'Modo aprovação: ativo — Claude pede confirmação antes de cada fase' : 'Modo aprovação: inativo — Claude executa direto'}
-        >{approvalMode === true ? '✓ aprovação' : '⚡ direto'}</button>
-        <button
-          onClick={() => setShowResults((v) => !v)}
-          style={{ ...styles.clearBtn, color: showResults ? '#00ff88' : '#444', fontSize: 11 }}
-          title={showResults ? 'Ocultar resultados' : 'Mostrar resultados'}
-        >{showResults ? '◉' : '○'}</button>
-        {chat.isStreaming && (
-          <button
-            onClick={async () => {
-              if (selectedProvider === 'claude') {
-                await window.api.claude.cancel?.();
-              } else {
-                await (window.api as any).aiProvider?.cancel();
-              }
-              setActiveTool(null);
-              chat.finishStreaming(undefined, undefined, true);
-              isSendingRef.current = false;
-            }}
-            style={{ background: 'rgba(217,48,48,0.15)', border: '1px solid rgba(217,48,48,0.4)', color: '#d93030', borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer', fontFamily: 'monospace' }}
-            title="Cancelar"
-          >■ parar</button>
-        )}
-        {chat.messages.length > 0 && <button onClick={chat.clearMessages} style={styles.clearBtn} title="Nova conversa">↺</button>}
-      </div>
-
-      {/* Messages / empty state */}
+      {/* ── Messages / empty state ────────────────────────────────── */}
       <div style={styles.messagesWrapper}>
-        {isEmpty
-          ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
-              {/* Pergunta de aprovação — só aparece uma vez por sessão */}
-              {approvalMode === null && (
-                <div style={styles.approvalCard}>
-                  <p style={styles.approvalText}>
-                    Quer que eu te passe todas as fases de construção te pedindo aprovação?
-                  </p>
-                  <div style={styles.approvalBtns}>
-                    <button style={styles.approvalBtnYes} onClick={() => setApprovalMode(true)}>✓ Sim</button>
-                    <button style={styles.approvalBtnNo} onClick={() => setApprovalMode(false)}>✗ Não</button>
-                  </div>
+        {isEmpty ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+            {approvalMode === null && (
+              <div style={styles.approvalCard}>
+                <p style={styles.approvalText}>Quer que eu apresente um resumo antes de cada fase e aguarde sua aprovação?</p>
+                <div style={styles.approvalBtns}>
+                  <button style={styles.approvalBtnYes} onClick={() => setApprovalMode(true)}>Sim, me mostre</button>
+                  <button style={styles.approvalBtnNo} onClick={() => setApprovalMode(false)}>Não, execute direto</button>
                 </div>
-              )}
-              <ChatEmptyState onQuickAction={(inject, delay) => { onTerminalInject(inject); if (delay) setTimeout(() => onTerminalInject(delay), 800); }} />
-              <div style={styles.quickSends}>
-                {QUICK_SENDS.map((qs) => (
-                  <button
-                    key={qs.label}
-                    style={styles.quickSendBtn}
-                    onClick={() => {
-                      const msg = qs.buildMsg();
-                      setInput(msg);
-                      setTimeout(() => send(msg), 50);
-                    }}
-                  >
-                    {qs.label}
-                  </button>
-                ))}
               </div>
+            )}
+            <ChatEmptyState onQuickAction={(inject, delay) => { onTerminalInject(inject); if (delay) setTimeout(() => onTerminalInject(delay), 800); }} />
+            <div style={styles.quickSends}>
+              {QUICK_SENDS.map((qs) => (
+                <button
+                  key={qs.label}
+                  style={styles.quickSendBtn}
+                  onClick={() => { const msg = qs.buildMsg(); setInput(msg); setTimeout(() => send(msg), 50); }}
+                >{qs.label}</button>
+              ))}
             </div>
-          )
-          : <ChatMessages
+          </div>
+        ) : (
+          <ChatMessages
             messages={showResults ? chat.messages : chat.messages.filter((m) => m.role !== 'assistant')}
             streamingText={showResults ? chat.streamingText : ''}
             actionCards={actionCards}
             onOpenFile={onOpenFile}
             onTerminalInject={onTerminalInject}
           />
-        }
+        )}
       </div>
 
-      {/* Tool activity indicator */}
+      {/* ── Tool activity ─────────────────────────────────────────── */}
       {activeTool && (
         <div style={styles.toolBar}>
           <span style={styles.toolDot} />
-          <span style={styles.toolLabel}>{toolLabel(activeTool.name)}</span>
+          <span style={styles.toolName}>{toolLabel(activeTool.name)}</span>
           {typeof activeTool.input === 'object' && activeTool.input !== null && 'path' in activeTool.input && (
             <span style={styles.toolPath}>{String((activeTool.input as Record<string, unknown>).path ?? '').split('/').slice(-2).join('/')}</span>
           )}
@@ -523,25 +474,25 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         </div>
       )}
 
-      {/* Contextual suggestions */}
+      {/* ── Suggestions ───────────────────────────────────────────── */}
       {suggestions.length > 0 && (
-        <div style={styles.suggestions}>
-          {suggestions.map((s) => <button key={s} style={styles.suggestionChip} onClick={() => send(s)}>{s}</button>)}
+        <div style={styles.suggestionsBar}>
+          {suggestions.map((s) => <button key={s} style={styles.suggChip} onClick={() => send(s)}>{s}</button>)}
         </div>
       )}
 
-      {/* @ mention dropdown */}
+      {/* ── @ mention dropdown ────────────────────────────────────── */}
       {files.showMentionList && (
         <div style={styles.mentionList}>
           {files.mentionFiles.map((f, i) => (
             <div key={f} style={{ ...styles.mentionItem, ...(i === files.mentionCursor ? styles.mentionActive : {}) }} onMouseDown={() => files.insertMention(f)}>
-              📄 {basename(f)}
+              ◈ {basename(f)}
             </div>
           ))}
         </div>
       )}
 
-      {/* Token count */}
+      {/* ── Token estimate ────────────────────────────────────────── */}
       {input && (
         <div style={styles.tokenBar}>
           {(() => {
@@ -551,37 +502,20 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
             const color = tokenColor(tokens);
             return (
               <>
-                <span style={{ color: color === 'green' ? '#3CB043' : color === 'yellow' ? '#f0a020' : '#d93030' }}>~{tokens.toLocaleString()} tokens</span>
-                {chat.lastCost && <span style={{ color: '#555' }}>última: ~${chat.lastCost.toFixed(3)}</span>}
+                <span style={{ color: color === 'green' ? D.accent : color === 'yellow' ? '#f0a020' : D.error }}>~{tokens.toLocaleString()} tokens</span>
+                {chat.lastCost && <span style={{ color: D.textDim }}>última: ~${chat.lastCost.toFixed(3)}</span>}
               </>
             );
           })()}
         </div>
       )}
 
+      {/* ── Voice error ───────────────────────────────────────────── */}
       {voice.voiceError && (
-        <div
-          style={{
-            margin: '0 12px 6px',
-            padding: '7px 10px',
-            background: 'rgba(217,48,48,0.1)',
-            border: '1px solid rgba(217,48,48,0.3)',
-            borderRadius: 6,
-            fontSize: 11,
-            color: '#d93030',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 6,
-            lineHeight: 1.4,
-          }}
-        >
-          <span style={{ flexShrink: 0 }}>⚠</span>
+        <div style={styles.voiceError}>
+          <span>⚠</span>
           <span style={{ flex: 1 }}>{voice.voiceError}</span>
-          <button
-            onClick={voice.clearError}
-            style={{ background: 'none', border: 'none', color: '#d93030', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, flexShrink: 0 }}
-            title="Fechar"
-          >×</button>
+          <button onClick={voice.clearError} style={styles.voiceErrorClose}>×</button>
         </div>
       )}
 
@@ -606,132 +540,213 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   );
 }
 
+const D = {
+  bg: '#0d1117', surface: '#161b22', surfaceHigh: '#21262d',
+  border: 'rgba(240,246,252,0.08)', borderMed: 'rgba(240,246,252,0.14)',
+  text: '#e6edf3', textMid: '#8b949e', textDim: '#484f58',
+  accent: '#3fb950', accentBg: 'rgba(63,185,80,0.07)', accentBorder: 'rgba(63,185,80,0.18)',
+  error: '#f85149',
+} as const;
+
 const styles: Record<string, React.CSSProperties> = {
-  container: { height: '100%', display: 'flex', flexDirection: 'column', background: '#111', fontSize: '12px', position: 'relative' },
-  dragOver: { outline: '2px dashed rgba(0,255,136,0.4)', outlineOffset: '-2px', background: 'rgba(0,255,136,0.03)' },
-  header: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid #2a2a2a', flexShrink: 0 },
-  headerIcon: { color: '#00ff88', fontSize: 16 },
-  headerTitle: { color: '#fff', fontWeight: 600, fontSize: 13, flex: 1 },
-  projectBadge: { color: '#444', fontSize: 10, fontFamily: 'monospace' },
-  messagesWrapper: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
-  suggestions: { display: 'flex', flexWrap: 'wrap', gap: 4, padding: '6px 12px', borderTop: '1px solid #1a1a1a', flexShrink: 0 },
-  suggestionChip: { background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#777', borderRadius: 10, padding: '3px 10px', fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap' },
-  mentionList: { position: 'absolute', bottom: 90, left: 12, right: 12, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 6, zIndex: 50, overflow: 'hidden' },
-  mentionItem: { padding: '6px 10px', cursor: 'pointer', fontSize: 11, color: '#888', fontFamily: 'monospace' },
-  mentionActive: { background: 'rgba(0,255,136,0.1)', color: '#00ff88' },
-  tokenBar: { display: 'flex', justifyContent: 'space-between', padding: '2px 14px 4px', fontSize: 10, fontFamily: 'monospace', borderTop: '1px solid #1a1a1a', flexShrink: 0 },
-  clearBtn: { background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 14, padding: '2px 4px', lineHeight: 1 },
-  toolBar: { display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'rgba(0,255,136,0.04)', borderTop: '1px solid rgba(0,255,136,0.1)', flexShrink: 0 },
-  toolDot: { width: 6, height: 6, borderRadius: '50%', background: '#00ff88', flexShrink: 0, animation: 'pulse 1s infinite' } as React.CSSProperties,
-  toolLabel: { fontSize: 10, color: '#00ff88', fontFamily: 'monospace', flexShrink: 0 },
-  toolPath: { fontSize: 10, color: '#555', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
-  quickSends: { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 12px 12px', flexShrink: 0 },
-  quickSendBtn: {
-    background: '#1a1a1a',
-    border: '1px solid #2a2a2a',
-    color: '#888',
-    borderRadius: 6,
+  container: {
+    height: '100%', display: 'flex', flexDirection: 'column',
+    background: D.bg, fontSize: '12px', position: 'relative',
+  },
+  dragOver: { outline: `2px dashed ${D.accentBorder}`, outlineOffset: '-2px', background: D.accentBg },
+
+  // ── Row 1: header
+  headerRow: {
+    display: 'flex', alignItems: 'center', gap: 6,
     padding: '8px 12px',
-    cursor: 'pointer',
-    fontSize: 11,
-    textAlign: 'left',
+    borderBottom: `1px solid ${D.border}`,
+    flexShrink: 0,
+    minHeight: 36,
+  },
+  logo: { color: D.accent, fontSize: 15, lineHeight: 1, fontFamily: 'monospace', flexShrink: 0 },
+  title: { color: D.text, fontWeight: 600, fontSize: 12.5, flexShrink: 0 },
+  statusGroup: { display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 },
+  statusLabel: { fontSize: 9.5, color: D.textDim, fontFamily: 'monospace' },
+  projectBadge: { color: D.textDim, fontSize: 9.5, fontFamily: 'monospace', flexShrink: 0 },
+  indexingLabel: { fontSize: 9.5, color: '#f0a020', fontFamily: 'monospace', flexShrink: 0 },
+  microBtn: {
+    background: 'none', border: 'none',
+    color: D.accent, fontSize: 9.5,
+    cursor: 'pointer', padding: '1px 3px',
+    fontFamily: 'monospace',
+  },
+  stopBtn: {
+    background: 'rgba(248,81,73,0.12)', border: `1px solid rgba(248,81,73,0.3)`,
+    color: D.error, borderRadius: 5,
+    padding: '2px 8px', fontSize: 9.5,
+    cursor: 'pointer', fontFamily: 'monospace', flexShrink: 0,
+  },
+  iconBtn: {
+    background: 'none', border: 'none',
+    color: D.textDim, cursor: 'pointer',
+    fontSize: 13, padding: '2px 4px', lineHeight: 1, flexShrink: 0,
+  },
+
+  // ── Row 2: controls
+  controlRow: {
+    display: 'flex', alignItems: 'center', gap: 2,
+    padding: '4px 10px',
+    borderBottom: `1px solid ${D.border}`,
+    background: D.bg,
+    flexShrink: 0,
+    minHeight: 30,
+  },
+  provTab: {
+    background: 'none', border: '1px solid transparent',
+    color: D.textDim, borderRadius: 4,
+    padding: '2px 7px', fontSize: 10,
+    cursor: 'pointer', fontFamily: 'monospace',
+    transition: 'all .12s', flexShrink: 0,
+  },
+  provTabActive: {
+    background: D.accentBg, border: `1px solid ${D.accentBorder}`, color: D.accent,
+  },
+  divider: { width: 1, height: 14, background: D.border, margin: '0 4px', flexShrink: 0 },
+  modelTabs: { display: 'flex', gap: 1, background: D.surface, borderRadius: 5, padding: 2 },
+  modelTab: {
+    background: 'transparent', border: '1px solid transparent',
+    color: D.textDim, borderRadius: 3,
+    padding: '1px 7px', fontSize: 9.5,
+    cursor: 'pointer', fontFamily: 'monospace', transition: 'all .12s',
+  },
+  modelTabActive: {
+    background: D.accentBg, border: `1px solid ${D.accentBorder}`, color: D.accent,
+  },
+  modelSelect: {
+    background: D.surface, border: `1px solid ${D.border}`,
+    color: D.textMid, borderRadius: 4,
+    padding: '2px 6px', fontSize: 10,
+    fontFamily: 'monospace', cursor: 'pointer',
+    outline: 'none', maxWidth: 160,
+  },
+  pillBtn: {
+    background: 'none', border: `1px solid ${D.border}`,
+    color: D.textDim, borderRadius: 4,
+    padding: '2px 7px', fontSize: 9.5,
+    cursor: 'pointer', fontFamily: 'monospace',
+    transition: 'all .12s', flexShrink: 0,
+  },
+  pillBtnOn: { background: D.accentBg, border: `1px solid ${D.accentBorder}`, color: D.accent },
+  pillBtnWarn: { background: 'rgba(240,160,32,0.08)', border: '1px solid rgba(240,160,32,0.25)', color: '#f0a020' },
+
+  // ── Key input bar
+  keyBar: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '5px 10px',
+    background: D.surface, borderBottom: `1px solid ${D.border}`,
+    flexShrink: 0,
+  },
+  keyLabel: { color: D.textDim, fontSize: 9.5, fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 },
+  keyInput: {
+    flex: 1, background: D.surfaceHigh,
+    border: `1px solid ${D.border}`, borderRadius: 4,
+    padding: '3px 8px', color: D.textMid,
+    fontSize: 11, outline: 'none', fontFamily: 'monospace',
+  },
+  saveKeyBtn: {
+    background: D.accentBg, border: `1px solid ${D.accentBorder}`,
+    color: D.accent, borderRadius: 4,
+    padding: '3px 10px', fontSize: 10,
+    cursor: 'pointer', fontFamily: 'monospace', flexShrink: 0,
+  },
+
+  // ── Messages
+  messagesWrapper: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+
+  // ── Tool bar
+  toolBar: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '4px 12px',
+    background: D.accentBg,
+    borderTop: `1px solid ${D.accentBorder}`,
+    flexShrink: 0,
+  },
+  toolDot: {
+    width: 5, height: 5, borderRadius: '50%',
+    background: D.accent, flexShrink: 0,
+    animation: 'pulse 1s infinite',
+  } as React.CSSProperties,
+  toolName: { fontSize: 9.5, color: D.accent, fontFamily: 'monospace', flexShrink: 0 },
+  toolPath: { fontSize: 9.5, color: D.textDim, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
+
+  // ── Suggestions
+  suggestionsBar: {
+    display: 'flex', flexWrap: 'wrap', gap: 4,
+    padding: '5px 10px',
+    borderTop: `1px solid ${D.border}`,
+    flexShrink: 0,
+  },
+  suggChip: {
+    background: D.surface, border: `1px solid ${D.border}`,
+    color: D.textDim, borderRadius: 10,
+    padding: '3px 10px', fontSize: 10,
+    cursor: 'pointer', whiteSpace: 'nowrap',
     fontFamily: 'inherit',
-    transition: 'background 0.12s, color 0.12s',
+  },
+
+  // ── @ mention
+  mentionList: {
+    position: 'absolute', bottom: 90, left: 12, right: 12,
+    background: D.surface, border: `1px solid ${D.borderMed}`,
+    borderRadius: 6, zIndex: 50, overflow: 'hidden',
+  },
+  mentionItem: {
+    padding: '6px 10px', cursor: 'pointer',
+    fontSize: 11, color: D.textMid, fontFamily: 'monospace',
+  },
+  mentionActive: { background: D.accentBg, color: D.accent },
+
+  // ── Token bar
+  tokenBar: {
+    display: 'flex', justifyContent: 'space-between',
+    padding: '2px 12px 3px',
+    fontSize: 9.5, fontFamily: 'monospace',
+    borderTop: `1px solid ${D.border}`, flexShrink: 0,
+  },
+
+  // ── Voice error
+  voiceError: {
+    display: 'flex', alignItems: 'flex-start', gap: 6,
+    margin: '0 10px 4px',
+    padding: '6px 10px',
+    background: 'rgba(248,81,73,0.08)', border: `1px solid rgba(248,81,73,0.2)`,
+    borderRadius: 6, fontSize: 10.5, color: D.error, lineHeight: 1.4,
+  },
+  voiceErrorClose: {
+    background: 'none', border: 'none', color: D.error,
+    cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0,
+  },
+
+  // ── Empty state
+  quickSends: { display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 12px 12px', flexShrink: 0 },
+  quickSendBtn: {
+    background: D.surface, border: `1px solid ${D.border}`,
+    color: D.textDim, borderRadius: 6,
+    padding: '7px 12px', cursor: 'pointer',
+    fontSize: 11, textAlign: 'left',
+    fontFamily: 'inherit', transition: 'border-color .12s, color .12s',
   } as React.CSSProperties,
   approvalCard: {
-    margin: '16px 12px 4px',
-    background: 'rgba(0,255,136,0.04)',
-    border: '1px solid rgba(0,255,136,0.15)',
-    borderRadius: 8,
-    padding: '14px 16px',
-    flexShrink: 0,
+    margin: '14px 12px 4px',
+    background: D.accentBg, border: `1px solid ${D.accentBorder}`,
+    borderRadius: 8, padding: '14px 16px', flexShrink: 0,
   } as React.CSSProperties,
-  approvalText: {
-    color: '#aaa',
-    fontSize: 12,
-    lineHeight: 1.5,
-    margin: '0 0 12px',
-  } as React.CSSProperties,
-  approvalBtns: {
-    display: 'flex',
-    gap: 8,
-  } as React.CSSProperties,
+  approvalText: { color: D.textMid, fontSize: 12, lineHeight: 1.5, margin: '0 0 12px' } as React.CSSProperties,
+  approvalBtns: { display: 'flex', gap: 8 } as React.CSSProperties,
   approvalBtnYes: {
-    background: 'rgba(0,255,136,0.12)',
-    border: '1px solid rgba(0,255,136,0.3)',
-    color: '#00ff88',
-    borderRadius: 6,
-    padding: '6px 18px',
-    fontSize: 12,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontWeight: 600,
+    background: D.accentBg, border: `1px solid ${D.accentBorder}`, color: D.accent,
+    borderRadius: 6, padding: '6px 16px', fontSize: 11.5,
+    cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
   } as React.CSSProperties,
   approvalBtnNo: {
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid #2a2a2a',
-    color: '#666',
-    borderRadius: 6,
-    padding: '6px 18px',
-    fontSize: 12,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  } as React.CSSProperties,
-  providerBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 2,
-    padding: '4px 10px',
-    borderBottom: '1px solid #1e1e1e',
-    background: '#0d0d0d',
-    flexShrink: 0,
-  } as React.CSSProperties,
-  providerBtn: {
-    background: 'none',
-    border: '1px solid transparent',
-    color: '#555',
-    borderRadius: 4,
-    padding: '2px 7px',
-    fontSize: 10,
-    cursor: 'pointer',
-    fontFamily: 'monospace',
-    transition: 'all .12s',
-  } as React.CSSProperties,
-  providerBtnActive: {
-    background: 'rgba(0,255,136,0.08)',
-    border: '1px solid rgba(0,255,136,0.25)',
-    color: '#00ff88',
-  } as React.CSSProperties,
-  modelSelect: {
-    background: '#1a1a1a',
-    border: '1px solid #2a2a2a',
-    color: '#888',
-    borderRadius: 4,
-    padding: '2px 6px',
-    fontSize: 10,
-    fontFamily: 'monospace',
-    cursor: 'pointer',
-    outline: 'none',
-    maxWidth: 140,
-  } as React.CSSProperties,
-  keyInputBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '5px 10px',
-    background: '#0d0d0d',
-    borderBottom: '1px solid #1e1e1e',
-    flexShrink: 0,
-  } as React.CSSProperties,
-  keyInput: {
-    flex: 1,
-    background: '#1a1a1a',
-    border: '1px solid #2a2a2a',
-    borderRadius: 4,
-    padding: '3px 8px',
-    color: '#888',
-    fontSize: 11,
-    outline: 'none',
-    fontFamily: 'monospace',
+    background: 'rgba(255,255,255,0.03)', border: `1px solid ${D.border}`,
+    color: D.textDim, borderRadius: 6,
+    padding: '6px 16px', fontSize: 11.5,
+    cursor: 'pointer', fontFamily: 'inherit',
   } as React.CSSProperties,
 };

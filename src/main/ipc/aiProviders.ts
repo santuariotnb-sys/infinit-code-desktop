@@ -316,8 +316,8 @@ export function registerAIProviderHandlers(mainWindow: BrowserWindow): void {
   // Recebe áudio como Buffer (WebM/Opus gravado pelo MediaRecorder)
   // e envia para Groq Whisper API. Não depende do Web Speech API do Google.
   ipcMain.handle('aiProvider:transcribe', async (_event, audioBuffer: Buffer, lang = 'pt') => {
-    const apiKey = getSecret('ai-provider-groq');
-    if (!apiKey) return { ok: false, error: 'Chave Groq não configurada. Adicione em Configurações → Groq API Key.' };
+    const apiKey = getSecret(`ai-provider-groq`);
+    if (!apiKey) return { ok: false, error: 'Chave Groq não configurada. Adicione em Configurações → AI Providers → Groq.' };
 
     const boundary = `----FormBoundary${Date.now().toString(16)}`;
     const filename = 'audio.webm';

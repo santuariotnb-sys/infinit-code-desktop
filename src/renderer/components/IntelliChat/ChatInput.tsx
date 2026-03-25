@@ -1,6 +1,14 @@
 import React, { useRef } from 'react';
 import VoiceWaveform from './VoiceWaveform';
 
+const D = {
+  bg: '#0d1117', surface: '#161b22', surfaceHigh: '#21262d',
+  border: 'rgba(240,246,252,0.08)', borderMed: 'rgba(240,246,252,0.14)',
+  text: '#e6edf3', textMid: '#8b949e', textDim: '#484f58',
+  accent: '#3fb950', accentBg: 'rgba(63,185,80,0.07)', accentBorder: 'rgba(63,185,80,0.18)',
+  error: '#f85149',
+} as const;
+
 interface AttachedFile {
   name: string;
   content: string;
@@ -25,129 +33,192 @@ interface ChatInputProps {
   hasActiveFile: boolean;
 }
 
+// Ícone SVG de microfone — limpo, sem emojis
+function MicIcon({ active }: { active: boolean }) {
+  const c = active ? D.accent : D.textDim;
+  return (
+    <svg width="13" height="15" viewBox="0 0 13 15" fill="none">
+      <rect x="4" y="0.5" width="5" height="9" rx="2.5" stroke={c} strokeWidth="1.2" fill={active ? `${D.accent}33` : 'none'} />
+      <path d="M1 7C1 9.76 3.24 12 6.5 12S12 9.76 12 7" stroke={c} strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M6.5 12v2" stroke={c} strokeWidth="1.2" strokeLinecap="round" />
+      {active && (
+        <>
+          <style>{`@keyframes voicePulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
+          <circle cx="6.5" cy="5" r="5.5" stroke={D.accent} strokeWidth="1" fill="none"
+            style={{ animation: 'voicePulse 1s ease-in-out infinite' }} />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export default function ChatInput({
-  value,
-  onChange,
-  onSend,
-  onKeyDown,
-  onVoiceToggle,
-  isVoiceSupported,
-  isListening,
-  analyserRef,
-  isStreaming,
-  attached,
-  onRemoveAttachment,
-  onFileAttach,
-  onAttachActiveFile,
-  onScreenshot,
-  hasActiveFile,
+  value, onChange, onSend, onKeyDown, onVoiceToggle,
+  isVoiceSupported, isListening, analyserRef, isStreaming,
+  attached, onRemoveAttachment, onFileAttach,
+  onAttachActiveFile, onScreenshot, hasActiveFile,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const canSend = (value.trim().length > 0 || attached.length > 0) && !isStreaming;
 
   return (
-    <div style={styles.inputArea}>
+    <div style={styles.wrap}>
+      {/* Attachments chips */}
       {attached.length > 0 && (
-        <div style={styles.attachments}>
+        <div style={styles.chips}>
           {attached.map((a, i) => (
-            <div key={i} style={styles.attachChip}>
-              {a.type === 'screenshot' ? '🖼' : '📄'} {a.name}
-              <button style={styles.removeChip} onClick={() => onRemoveAttachment(i)}>×</button>
+            <div key={i} style={styles.chip}>
+              <span style={styles.chipIcon}>{a.type === 'screenshot' ? '◻' : '◈'}</span>
+              <span style={styles.chipName}>{a.name}</span>
+              <button style={styles.chipRemove} onClick={() => onRemoveAttachment(i)} title="Remover">×</button>
             </div>
           ))}
         </div>
       )}
 
-      {analyserRef && (
+      {/* Voice waveform */}
+      {analyserRef && isListening && (
         <VoiceWaveform analyserRef={analyserRef} isListening={isListening} />
       )}
 
-      <div style={styles.inputToolbar}>
-        <button style={styles.toolBtn} onClick={() => fileInputRef.current?.click()} title="Anexar arquivo">📎</button>
-        <button style={styles.toolBtn} onClick={onAttachActiveFile} title="Arquivo ativo" disabled={!hasActiveFile}>📁</button>
-        <button style={styles.toolBtn} onClick={onScreenshot} title="Screenshot">🖼</button>
-        {isVoiceSupported && (
+      {/* Main input row */}
+      <div style={styles.row}>
+        {/* Tool buttons — left group */}
+        <div style={styles.tools}>
           <button
-            style={{
-              ...styles.toolBtn,
-              ...(isListening ? styles.toolBtnActive : {}),
-              position: 'relative',
-            }}
-            onClick={onVoiceToggle}
-            title={isListening ? 'Parar gravação' : 'Gravar voz (pt-BR)'}
+            style={styles.toolBtn}
+            onClick={() => fileInputRef.current?.click()}
+            title="Anexar arquivo"
           >
-            {isListening ? (
-              <>
-                {/* Anel pulsante ao redor */}
-                <span style={{
-                  position: 'absolute', inset: -3, borderRadius: '50%',
-                  border: '1.5px solid rgba(0,255,136,0.5)',
-                  animation: 'voicePulse 1s ease-in-out infinite',
-                  pointerEvents: 'none',
-                }} />
-                <svg width="13" height="15" viewBox="0 0 13 15" fill="none" style={{ color: '#00ff88' }}>
-                  <rect x="4" y="0.5" width="5" height="9" rx="2.5" fill="currentColor" opacity=".9" />
-                  <path d="M1 7C1 9.76 3.24 12 6.5 12S12 9.76 12 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" fill="none" />
-                  <path d="M6.5 12v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-                  <rect x="3" y="3" width="1.5" height="5" rx=".75" fill="rgba(0,255,136,0.5)" style={{ animation: 'voiceBar1 .5s ease-in-out infinite alternate' }} />
-                  <rect x="5.75" y="2" width="1.5" height="7" rx=".75" fill="rgba(0,255,136,0.5)" style={{ animation: 'voiceBar2 .5s .1s ease-in-out infinite alternate' }} />
-                  <rect x="8.5" y="3" width="1.5" height="5" rx=".75" fill="rgba(0,255,136,0.5)" style={{ animation: 'voiceBar1 .5s .2s ease-in-out infinite alternate' }} />
-                </svg>
-              </>
-            ) : (
-              <svg width="12" height="14" viewBox="0 0 12 14" fill="none" style={{ opacity: 0.65 }}>
-                <rect x="3.5" y="0.5" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
-                <path d="M1 6.5C1 9.26 3.24 11.5 6.5 11.5S12 9.26 12 6.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" />
-                <path d="M6.5 11.5v2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-              </svg>
-            )}
-            <style>{`
-              @keyframes voicePulse { 0%,100%{transform:scale(1);opacity:.5} 50%{transform:scale(1.4);opacity:1} }
-              @keyframes voiceBar1  { from{transform:scaleY(.4)} to{transform:scaleY(1)} }
-              @keyframes voiceBar2  { from{transform:scaleY(.6)} to{transform:scaleY(1)} }
-            `}</style>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <path d="M7 1H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V5L7 1z" stroke="currentColor" strokeWidth="1.1" fill="none" />
+              <path d="M7 1v4h4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+            </svg>
           </button>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          style={{ display: 'none' }}
-          onChange={onFileAttach}
-          accept=".ts,.tsx,.js,.jsx,.json,.md,.txt,.sql,.css,.env.example,.py,.go,.rs"
-        />
-      </div>
+          <button
+            style={{ ...styles.toolBtn, opacity: hasActiveFile ? 0.75 : 0.3 }}
+            onClick={onAttachActiveFile}
+            title="Arquivo ativo no editor"
+            disabled={!hasActiveFile}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <rect x="1" y="1" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.1" fill="none" />
+              <path d="M4 6.5h5M6.5 4v5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+            </svg>
+          </button>
+          <button style={styles.toolBtn} onClick={onScreenshot} title="Capturar screenshot">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <rect x="1" y="2.5" width="11" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
+              <circle cx="6.5" cy="6.5" r="2" stroke="currentColor" strokeWidth="1.1" />
+              <path d="M4.5 2.5L5.3 1h2.4l.8 1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+            </svg>
+          </button>
+          {isVoiceSupported && (
+            <button
+              style={{ ...styles.toolBtn, color: isListening ? D.accent : D.textDim }}
+              onClick={onVoiceToggle}
+              title={isListening ? 'Parar gravação' : 'Gravar voz (pt-BR)'}
+            >
+              <MicIcon active={isListening} />
+            </button>
+          )}
+        </div>
 
-      <div style={styles.inputRow}>
+        {/* Textarea */}
         <textarea
-          ref={textareaRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Descreva o que quer fazer... (@arquivo para mencionar)"
+          placeholder="Descreva o que quer fazer… (@arquivo para mencionar)"
           style={styles.textarea}
           rows={2}
         />
+
+        {/* Send button */}
         <button
-          style={{ ...styles.sendBtn, opacity: value.trim() || attached.length ? 1 : 0.4 }}
+          style={{ ...styles.sendBtn, opacity: canSend ? 1 : 0.3 }}
           onClick={onSend}
-          disabled={(!value.trim() && !attached.length) || isStreaming}
+          disabled={!canSend}
+          title="Enviar (Enter)"
         >
-          ↑
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 11V3M3.5 6.5L7 3l3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{ display: 'none' }}
+        onChange={onFileAttach}
+        accept=".ts,.tsx,.js,.jsx,.json,.md,.txt,.sql,.css,.env.example,.py,.go,.rs"
+      />
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  inputArea: { borderTop: '1px solid #2a2a2a', flexShrink: 0 },
-  attachments: { display: 'flex', flexWrap: 'wrap', gap: 4, padding: '4px 12px', borderBottom: '1px solid #1a1a1a' },
-  attachChip: { display: 'flex', alignItems: 'center', gap: 4, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 10, padding: '2px 8px', fontSize: 10, color: '#888' },
-  removeChip: { background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 },
-  inputToolbar: { display: 'flex', gap: 2, padding: '4px 10px', borderBottom: '1px solid #1a1a1a' },
-  toolBtn: { background: 'none', border: 'none', fontSize: 13, cursor: 'pointer', padding: '3px 5px', borderRadius: 4, opacity: 0.6 },
-  toolBtnActive: { opacity: 1, background: 'rgba(0,255,136,0.15)', color: '#00ff88' },
-  inputRow: { display: 'flex', gap: 6, padding: '8px 10px', alignItems: 'flex-end' },
-  textarea: { flex: 1, background: '#0d0d0d', border: '1px solid #2a2a2a', borderRadius: 6, padding: '8px 10px', color: '#fff', fontSize: 12, resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.4 },
-  sendBtn: { width: 34, height: 34, borderRadius: 6, background: '#00ff88', color: '#0a0a0a', border: 'none', fontSize: 18, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  wrap: {
+    borderTop: `1px solid rgba(240,246,252,0.08)`,
+    flexShrink: 0,
+    background: D.bg,
+  },
+  chips: {
+    display: 'flex', flexWrap: 'wrap', gap: 4,
+    padding: '6px 12px 0',
+  },
+  chip: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    background: D.surface, border: `1px solid ${D.border}`,
+    borderRadius: 8, padding: '2px 6px 2px 8px',
+    fontSize: 10.5, color: D.textMid,
+  },
+  chipIcon: { color: D.textDim, fontSize: 10 },
+  chipName: { maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  chipRemove: {
+    background: 'none', border: 'none', color: D.textDim,
+    cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1,
+    display: 'flex', alignItems: 'center',
+  },
+
+  row: {
+    display: 'flex', alignItems: 'flex-end', gap: 4,
+    padding: '8px 10px',
+  },
+  tools: { display: 'flex', flexDirection: 'column', gap: 2, paddingBottom: 2 },
+  toolBtn: {
+    background: 'none', border: 'none',
+    color: D.textDim, cursor: 'pointer',
+    padding: '4px', borderRadius: 4,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    transition: 'color .12s',
+  },
+  textarea: {
+    flex: 1,
+    background: D.surface,
+    border: `1px solid ${D.border}`,
+    borderRadius: 8,
+    padding: '9px 12px',
+    color: D.text,
+    fontSize: 12.5,
+    resize: 'none',
+    outline: 'none',
+    fontFamily: '-apple-system, "SF Pro Text", sans-serif',
+    lineHeight: 1.5,
+    caretColor: D.accent,
+  },
+  sendBtn: {
+    width: 34, height: 34,
+    borderRadius: 8,
+    background: D.accent,
+    color: '#0d1117',
+    border: 'none',
+    cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+    transition: 'opacity .15s',
+    marginBottom: 1,
+  },
 };
