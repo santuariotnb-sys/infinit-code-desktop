@@ -124,9 +124,10 @@ interface PreviewProps {
   projectPath?: string | null;
   hasNodeModules?: boolean | null;
   pkgManager?: string;
+  refreshTrigger?: number; // incrementar para forçar reload (ex: pós-git-sync)
 }
 
-export default function Preview({ terminalOutput = '', onRunDev, projectPath, hasNodeModules, pkgManager = 'npm' }: PreviewProps) {
+export default function Preview({ terminalOutput = '', onRunDev, projectPath, hasNodeModules, pkgManager = 'npm', refreshTrigger }: PreviewProps) {
   const [port, setPort] = useState<number | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'live' | 'error'>('idle');
   const [iframeKey, setIframeKey] = useState(0);
@@ -231,6 +232,19 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     autoStartedForRef.current = projectPath;
     setTimeout(() => onRunDev(), 600);
   }, [projectPath, hasNodeModules, onRunDev]);
+
+  // Refresh externo (ex: pós-git-sync/pull) — só recarrega se preview estiver ao vivo
+  useEffect(() => {
+    if (!refreshTrigger || !port) return;
+    try {
+      iframeRef.current?.contentWindow?.location.reload();
+    } catch {
+      setIframeKey(k => k + 1);
+    }
+    setHmrFlash(true);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setHmrFlash(false), 800);
+  }, [refreshTrigger]);
 
   // Cleanup timers
   useEffect(() => {
@@ -374,8 +388,15 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
       {/* ── Browser toolbar ── */}
       <div style={{ ...s.toolbar, borderBottomColor: hmrFlash ? '#22c55e' : '#1e1e1e' }}>
 
-        {/* Status dot */}
-        <div style={{ ...s.dot, background: dotColor }} title={!port ? 'Aguardando servidor' : status} />
+        {/* Status dot + badge ao vivo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <div style={{ ...s.dot, background: dotColor }} title={!port ? 'Aguardando servidor' : status} />
+          {isLive && (
+            <span style={{ ...s.liveBadge, animation: hmrFlash ? 'none' : undefined, background: hmrFlash ? 'rgba(34,197,94,0.25)' : 'rgba(34,197,94,0.1)' }}>
+              ao vivo
+            </span>
+          )}
+        </div>
 
         {/* Address bar com dropdown de rotas */}
         <div style={s.addressAreaWrap} ref={routesPickerRef}>
@@ -557,6 +578,17 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: '50%',
     flexShrink: 0,
     transition: 'background 0.3s',
+  },
+  liveBadge: {
+    fontSize: 9,
+    fontFamily: 'monospace',
+    color: '#22c55e',
+    padding: '1px 5px',
+    borderRadius: 4,
+    border: '1px solid rgba(34,197,94,0.2)',
+    transition: 'background 0.3s',
+    letterSpacing: '0.03em',
+    textTransform: 'uppercase' as const,
   },
   addressAreaWrap: {
     flex: 1,

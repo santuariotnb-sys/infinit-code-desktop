@@ -59,6 +59,9 @@ export default function IDE() {
 
   // Track Claude streaming status for toolbar indicator
   const [isChatStreaming, setIsChatStreaming] = useState(false);
+  // Refresh do preview após git sync/pull
+  const [previewRefreshTrigger, setPreviewRefreshTrigger] = useState(0);
+  const triggerPreviewRefresh = () => setPreviewRefreshTrigger(n => n + 1);
   type ChatTab = 'chat' | 'research' | 'agents';
   const [chatTab, setChatTab] = useState<ChatTab>('chat');
   const [showSettings, setShowSettings] = useState(false);
@@ -274,6 +277,7 @@ export default function IDE() {
                       projectPath={fileManager.projectPath}
                       hasNodeModules={fileManager.hasNodeModules}
                       pkgManager={fileManager.pkgManager}
+                      refreshTrigger={previewRefreshTrigger}
                     />
                   </ErrorBoundary>
                 </div>
@@ -403,7 +407,12 @@ export default function IDE() {
           open={panels.showGit}
           onClose={panels.toggleGit}
           projectPath={fileManager.projectPath}
-          onSyncProgress={(msg) => terminal.appendOutput(`[git] ${msg}`)}
+          onSyncProgress={(msg) => {
+            terminal.appendOutput(`[git] ${msg}`);
+            if (msg.includes('done') || msg.includes('pulled') || msg.includes('pushed')) {
+              triggerPreviewRefresh();
+            }
+          }}
           onConnect={() => github.setShowAuthModal(true)}
           onChangesUpdate={setGitChangeCount}
         />

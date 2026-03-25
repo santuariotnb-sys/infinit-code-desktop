@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 interface FileNode {
   name: string;
@@ -16,6 +16,9 @@ function detectPkgManager(fileNames: string[]): PkgManager {
   return 'npm';
 }
 
+// Extensões de arquivo que Vite consegue fazer HMR
+const HMR_EXTENSIONS = /\.(tsx?|jsx?|css|scss|sass|less|html|vue|svelte|json)$/i;
+
 export function useFileManager() {
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [files, setFiles] = useState<FileNode[]>([]);
@@ -24,19 +27,28 @@ export function useFileManager() {
   const [isModified, setIsModified] = useState(false);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [pkgManager, setPkgManager] = useState<PkgManager>('npm');
-  const [hasNodeModules, setHasNodeModules] = useState<boolean | null>(null); // null = ainda verificando
+  const [hasNodeModules, setHasNodeModules] = useState<boolean | null>(null);
+
+  // Ref para debounce do auto-save (1.5s após última digitação)
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref para acesso ao estado atual sem closure stale
+  const openFileRef = useRef<string | null>(null);
+  const fileContentRef = useRef('');
+  const isModifiedRef = useRef(false);
+
+  openFileRef.current = openFile;
+  fileContentRef.current = fileContent;
+  isModifiedRef.current = isModified;
 
   const loadFiles = useCallback(async (dir: string) => {
     const result = await window.api.files.readDir(dir);
     if (result?.ok) {
       setFiles(result.data ?? []);
-      // Detecta package manager pelos arquivos de lock na raiz
       const rootNames = (result.data ?? []).map((f: FileNode) => f.name);
       setPkgManager(detectPkgManager(rootNames));
     } else {
       setFiles([]);
     }
-    // Verifica se node_modules existe
     const nmCheck = await window.api.files.exists(`${dir}/node_modules`);
     setHasNodeModules(nmCheck?.exists ?? false);
   }, []);
@@ -44,8 +56,6 @@ export function useFileManager() {
   useEffect(() => {
     if (!projectPath) return;
     loadFiles(projectPath);
-    // Terminal já é criado pelo componente Terminal.tsx no mount.
-    // Apenas muda o cwd do PTY existente via cd, sem matar o processo.
     window.api.terminal.write(`cd "${projectPath}"\r`);
     window.api.files.watch(projectPath);
     const cleanupListener = window.api.files.onChanged(() => loadFiles(projectPath));
@@ -61,7 +71,7 @@ export function useFileManager() {
     setFileContent('');
     setIsModified(false);
     setOpenTabs([]);
-    setHasNodeModules(null); // reset enquanto recarrega
+    setHasNodeModules(null);
   }
 
   async function handleOpenFolder() {
@@ -70,7 +80,8 @@ export function useFileManager() {
   }
 
   async function handleSelectFile(filePath: string) {
-    if (isModified && openFile) await handleSave();
+    // Salva pendente antes de trocar
+    if (isModifiedRef.current && openFileRef.current) await handleSave();
     const result = await window.api.files.read(filePath);
     if (result?.ok) {
       setOpenFile(filePath);
@@ -85,7 +96,7 @@ export function useFileManager() {
   async function closeTab(filePath: string) {
     setOpenTabs((prev) => {
       const next = prev.filter((p) => p !== filePath);
-      if (openFile === filePath) {
+      if (openFileRef.current === filePath) {
         const idx = prev.indexOf(filePath);
         const newActive = next[Math.max(0, idx - 1)] ?? next[0] ?? null;
         if (newActive) {
@@ -101,10 +112,13 @@ export function useFileManager() {
   }
 
   async function handleSave() {
-    if (openFile && isModified) {
-      const result = await window.api.files.write(openFile, fileContent);
+    const path = openFileRef.current;
+    const content = fileContentRef.current;
+    if (path && isModifiedRef.current) {
+      const result = await window.api.files.write(path, content);
       if (result?.ok) {
         setIsModified(false);
+        isModifiedRef.current = false;
       } else {
         console.error('[useFileManager] write falhou:', result?.error);
       }
@@ -112,11 +126,26 @@ export function useFileManager() {
   }
 
   function handleContentChange(value: string | undefined) {
-    if (value !== undefined) {
-      setFileContent(value);
-      setIsModified(true);
+    if (value === undefined) return;
+    setFileContent(value);
+    setIsModified(true);
+    fileContentRef.current = value;
+    isModifiedRef.current = true;
+
+    // Auto-save debounced: salva 1.5s após parar de digitar
+    // Isso garante que Vite sempre vê as mudanças → HMR ao vivo
+    if (HMR_EXTENSIONS.test(openFileRef.current ?? '')) {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => handleSave(), 1500);
     }
   }
+
+  // Cleanup do timer ao desmontar
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, []);
 
   return {
     projectPath,
