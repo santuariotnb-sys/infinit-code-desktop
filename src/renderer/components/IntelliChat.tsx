@@ -17,16 +17,36 @@ export interface IntelliChatProps {
   terminalOutput: string;
   onOpenFile?: (path: string) => void;
   onStreamingChange?: (isStreaming: boolean) => void;
-  projectContext?: string; // índice completo do projeto
+  projectContext?: string;
+  isIndexing?: boolean;
+  onReindex?: () => void;
 }
 
-export default function IntelliChat({ mode = 'project', projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile, onStreamingChange, projectContext }: IntelliChatProps) {
+const TOOL_LABELS: Record<string, string> = {
+  read_file: '📄 Lendo',
+  write_file: '✏️ Escrevendo',
+  edit_file: '✏️ Editando',
+  bash: '⚡ Executando',
+  list_files: '📁 Listando',
+  search_files: '🔍 Buscando',
+  grep_search: '🔎 Pesquisando',
+  web_search: '🌐 Web',
+  str_replace_editor: '✏️ Editando',
+  computer_use: '🖥️ Computador',
+};
+
+function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? `🔧 ${name}`;
+}
+
+export default function IntelliChat({ mode = 'project', projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile, onStreamingChange, projectContext, isIndexing, onReindex }: IntelliChatProps) {
   const [input, setInput] = useState('');
   const [actionCards, setActionCards] = useState<ActionCard[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showResults, setShowResults] = useState(true);
   // Pergunta de aprovação — null = ainda não respondeu, true = sim, false = não
   const [approvalMode, setApprovalMode] = useState<boolean | null>(null);
+  const [activeTool, setActiveTool] = useState<{ name: string; input: unknown } | null>(null);
 
   const chat = useChatMessages();
   const voice = useVoiceInput({ onTranscript: (text) => setInput((prev) => prev ? `${prev} ${text}` : text) });
@@ -115,8 +135,9 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     isSendingRef.current = true;
 
     const removeChunk = window.api.claude.onChunk?.((data) => chat.appendChunk(data.text)) ?? (() => {});
-    const removeTool  = window.api.claude.onTool?.(() => {}) ?? (() => {});
+    const removeTool  = window.api.claude.onTool?.((data) => setActiveTool(data)) ?? (() => {});
     const removeError = window.api.claude.onError?.((data) => {
+      setActiveTool(null);
       chat.finishStreaming(undefined, undefined, true);
       chat.addSystemMessage(`⚠ ${data.message}`);
       isSendingRef.current = false;
@@ -134,6 +155,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
       removeChunk();
       removeTool();
       removeError();
+      setActiveTool(null);
       isSendingRef.current = false;
     }
   }
@@ -191,11 +213,33 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
           )}
         </div>
         <span style={styles.projectBadge}>{projectPath ? basename(projectPath) : 'sem projeto'}</span>
+        {projectContext && !isIndexing && (
+          <button
+            onClick={onReindex}
+            style={{ fontSize: 9, color: '#3CB043', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.7 }}
+            title={`Contexto indexado (${Math.round(projectContext.length / 1000)}KB) — clique para reindexar`}
+          >⊕</button>
+        )}
+        {isIndexing && (
+          <span style={{ fontSize: 9, color: '#f0a020', fontFamily: 'monospace' }}>indexando…</span>
+        )}
         <button
           onClick={() => setShowResults((v) => !v)}
           style={{ ...styles.clearBtn, color: showResults ? '#00ff88' : '#444', fontSize: 11 }}
           title={showResults ? 'Ocultar resultados' : 'Mostrar resultados'}
         >{showResults ? '◉' : '○'}</button>
+        {chat.isStreaming && (
+          <button
+            onClick={async () => {
+              await window.api.claude.cancel?.();
+              setActiveTool(null);
+              chat.finishStreaming(undefined, undefined, true);
+              isSendingRef.current = false;
+            }}
+            style={{ background: 'rgba(217,48,48,0.15)', border: '1px solid rgba(217,48,48,0.4)', color: '#d93030', borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer', fontFamily: 'monospace' }}
+            title="Cancelar"
+          >■ parar</button>
+        )}
         {chat.messages.length > 0 && <button onClick={chat.clearMessages} style={styles.clearBtn} title="Nova conversa">↺</button>}
       </div>
 
@@ -243,6 +287,20 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
           />
         }
       </div>
+
+      {/* Tool activity indicator */}
+      {activeTool && (
+        <div style={styles.toolBar}>
+          <span style={styles.toolDot} />
+          <span style={styles.toolLabel}>{toolLabel(activeTool.name)}</span>
+          {typeof activeTool.input === 'object' && activeTool.input !== null && 'path' in activeTool.input && (
+            <span style={styles.toolPath}>{String((activeTool.input as Record<string, unknown>).path ?? '').split('/').slice(-2).join('/')}</span>
+          )}
+          {typeof activeTool.input === 'object' && activeTool.input !== null && 'command' in activeTool.input && (
+            <span style={styles.toolPath}>{String((activeTool.input as Record<string, unknown>).command ?? '').slice(0, 40)}</span>
+          )}
+        </div>
+      )}
 
       {/* Contextual suggestions */}
       {suggestions.length > 0 && (
@@ -315,6 +373,10 @@ const styles: Record<string, React.CSSProperties> = {
   mentionActive: { background: 'rgba(0,255,136,0.1)', color: '#00ff88' },
   tokenBar: { display: 'flex', justifyContent: 'space-between', padding: '2px 14px 4px', fontSize: 10, fontFamily: 'monospace', borderTop: '1px solid #1a1a1a', flexShrink: 0 },
   clearBtn: { background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 14, padding: '2px 4px', lineHeight: 1 },
+  toolBar: { display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', background: 'rgba(0,255,136,0.04)', borderTop: '1px solid rgba(0,255,136,0.1)', flexShrink: 0 },
+  toolDot: { width: 6, height: 6, borderRadius: '50%', background: '#00ff88', flexShrink: 0, animation: 'pulse 1s infinite' } as React.CSSProperties,
+  toolLabel: { fontSize: 10, color: '#00ff88', fontFamily: 'monospace', flexShrink: 0 },
+  toolPath: { fontSize: 10, color: '#555', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
   quickSends: { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 12px 12px', flexShrink: 0 },
   quickSendBtn: {
     background: '#1a1a1a',

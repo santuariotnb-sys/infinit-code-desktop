@@ -50,7 +50,7 @@ function makeDragH(
 export default function IDE() {
   const panels = usePanels();
   const fileManager = useFileManager();
-  const { projectContext } = useProjectIndex(fileManager.projectPath, fileManager.files);
+  const { projectContext, isIndexing, reindex } = useProjectIndex(fileManager.projectPath, fileManager.files);
   const terminal = useTerminal({
     onPortDetected: () => panels.setShowPreview(true),
   });
@@ -339,6 +339,8 @@ export default function IDE() {
                     onOpenFile={fileManager.handleSelectFile}
                     onStreamingChange={setIsChatStreaming}
                     projectContext={projectContext}
+                    isIndexing={isIndexing}
+                    onReindex={reindex}
                   />
                 </ErrorBoundary>
               )}
