@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { basename } from '../utils/path';
-import { buildPrompt, estimateTokens, tokenColor, ChatContext } from '../lib/buildPrompt';
+import { buildPrompt, estimateTokens, tokenColor, ChatContext, findRelevantPaths } from '../lib/buildPrompt';
 import { parseActionCards, getSuggestions, ActionCard } from '../lib/chatUtils';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useVoiceInput } from '../hooks/useVoiceInput';
@@ -35,11 +35,31 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
 
   useEffect(() => { onStreamingChange?.(chat.isStreaming); }, [chat.isStreaming, onStreamingChange]);
 
+  // Verifica status e aquece a sessão Claude ao montar
   useEffect(() => {
     window.api.claude.status?.().then((s) => {
       chat.setClaudeStatus(s.installed ? 'ready' : 'offline');
+      if (s.installed) warmSession();
     }).catch(() => chat.setClaudeStatus('offline'));
   }, []);
+
+  // Envia um ping silencioso para iniciar a sessão Claude (sem aparecer no chat)
+  async function warmSession() {
+    try {
+      const cwd = projectPath ?? (typeof process !== 'undefined' ? process.env.HOME ?? '~' : '~');
+      // Registra listener de chunk para descartar durante o warm-up
+      const removeChunk = window.api.claude.onChunk?.(() => {}) ?? (() => {});
+      const result = await window.api.claude.ask?.({
+        prompt: 'Responda apenas: ok.',
+        cwd,
+        sessionId: undefined,
+      });
+      removeChunk();
+      if (result?.sessionId) {
+        chat.finishStreaming(undefined, result.sessionId, true /* silent */);
+      }
+    } catch { /* ignora erro no warm-up */ }
+  }
 
   useEffect(() => {
     setActionCards(parseActionCards(terminalOutput));
@@ -67,12 +87,31 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     }
 
     const isResearch = mode === 'research';
+    const cwd = projectPath ?? (typeof process !== 'undefined' ? process.env.HOME ?? '~' : '~');
+
+    // ── Resolve arquivos relevantes ao pedido ─────────────────────────────────
+    let relevantFiles: Array<{ path: string; content: string }> = [];
+    if (!isResearch && projectContext && projectPath) {
+      const paths = findRelevantPaths(msg, projectContext, projectPath, activeFile?.path);
+      const reads = await Promise.allSettled(
+        paths.map(async (p) => {
+          const r = await window.api.files.read(p);
+          return r?.ok && r.data ? { path: p, content: r.data } : null;
+        })
+      );
+      relevantFiles = reads
+        .filter((r): r is PromiseFulfilledResult<{ path: string; content: string }> =>
+          r.status === 'fulfilled' && r.value !== null)
+        .map(r => r.value);
+    }
+
     const ctx: ChatContext = {
-      cwd: projectPath ?? (typeof process !== 'undefined' ? process.env.HOME ?? '~' : '~'),
+      cwd,
       activeFile: isResearch ? undefined : activeFile?.path,
       activeFileContent: isResearch ? undefined : activeFile?.content,
       terminalOutput: isResearch ? '' : terminalOutput.split('\n').slice(-30).join('\n'),
       projectContext: isResearch ? undefined : projectContext,
+      relevantFiles: isResearch ? undefined : relevantFiles,
       history: chat.messages.filter((m) => m.role !== 'system').slice(-6).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     };
 
@@ -241,7 +280,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         <div style={styles.tokenBar}>
           {(() => {
             const isRes = mode === 'research';
-            const ctx: ChatContext = { cwd: projectPath ?? '~', activeFile: isRes ? undefined : activeFile?.path, activeFileContent: isRes ? undefined : activeFile?.content, terminalOutput: isRes ? '' : terminalOutput.split('\n').slice(-10).join('\n'), projectContext: isRes ? undefined : projectContext, history: chat.messages.filter(m => m.role !== 'system').slice(-4).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) };
+            const ctx: ChatContext = { cwd: projectPath ?? '~', activeFile: isRes ? undefined : activeFile?.path, activeFileContent: isRes ? undefined : activeFile?.content, terminalOutput: isRes ? '' : terminalOutput.split('\n').slice(-10).join('\n'), projectContext: isRes ? undefined : projectContext, relevantFiles: undefined, history: chat.messages.filter(m => m.role !== 'system').slice(-4).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) };
             const tokens = estimateTokens(buildPrompt(input, ctx));
             const color = tokenColor(tokens);
             return (
