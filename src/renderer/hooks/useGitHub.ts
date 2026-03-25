@@ -87,7 +87,7 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
         return;
       }
       setIsCloneMode(false);
-      onProjectOpen(dest);
+      onProjectOpen(result.path ?? dest);
     } catch (error) {
       setCloneError(String(error));
     } finally {

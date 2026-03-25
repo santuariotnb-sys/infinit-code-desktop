@@ -76,7 +76,7 @@ interface ElectronAPI {
     commit?: (cwd: string, message: string) => Promise<{ ok: boolean; error?: string }>;
     disconnect: () => Promise<{ ok: boolean }>;
     onDeviceFlowProgress?: (cb: () => void) => () => void;
-    clone: (repo: string, dest: string) => Promise<{ ok: boolean; path?: string; error?: string; cancelled?: boolean }>;
+    clone: (repo: string, dest: string) => Promise<{ ok: boolean; path?: string; error?: string; cancelled?: boolean; alreadyExists?: boolean }>;
     cancelClone: () => Promise<{ ok: boolean }>;
     listRepos: () => Promise<{ repos: RepoInfo[]; error?: string }>;
     gitStatus: (cwd: string) => Promise<{ isRepo: boolean; branch: string; changes: GitChange[] }>;

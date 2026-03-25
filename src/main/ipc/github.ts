@@ -222,16 +222,30 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
         }
         execSync('git config --global credential.helper store', { timeout: 5000 });
       }
+      // Se o diretório já existe e não está vazio, abre direto (clone anterior)
+      if (fs.existsSync(resolvedDest) && fs.readdirSync(resolvedDest).length > 0) {
+        return { ok: true, path: resolvedDest, alreadyExists: true };
+      }
+
       const cloneUrl = repo.startsWith('http') ? repo : `https://github.com/${repo}.git`;
-      return new Promise<{ ok: boolean; path?: string; error?: string; cancelled?: boolean }>((resolve) => {
+      return new Promise<{ ok: boolean; path?: string; error?: string; cancelled?: boolean; alreadyExists?: boolean }>((resolve) => {
         const proc = spawn('git', ['clone', '--progress', cloneUrl, resolvedDest]);
         activeCloneProcess = proc;
+        let stderrLog = '';
         proc.stdout?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
-        proc.stderr?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
+        proc.stderr?.on('data', (d: Buffer) => {
+          const msg = d.toString();
+          stderrLog += msg;
+          safeSend(mainWindow, 'github:sync-progress', { msg: msg.trim() });
+        });
         proc.on('close', (code, signal) => {
           activeCloneProcess = null;
           if (signal === 'SIGTERM') return resolve({ ok: false, cancelled: true, error: 'Clone cancelado.' });
-          code === 0 ? resolve({ ok: true, path: resolvedDest }) : resolve({ ok: false, error: `Exit ${code}` });
+          if (code === 0) return resolve({ ok: true, path: resolvedDest });
+          // Extrai mensagem legível do stderr
+          const fatalLine = stderrLog.split('\n').find((l) => l.toLowerCase().includes('fatal:') || l.toLowerCase().includes('error:'));
+          const errorMsg = fatalLine?.replace(/^(fatal|error):\s*/i, '').trim() || `Falha no clone (exit ${code})`;
+          resolve({ ok: false, error: errorMsg });
         });
       });
     } catch (e) {

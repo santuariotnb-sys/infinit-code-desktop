@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 
 interface ToolbarProps {
   projectPath: string;
@@ -46,6 +47,9 @@ export default function Toolbar({
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [showGitHubMenu, setShowGitHubMenu] = useState(false);
+  const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [gitHubMenuPos, setGitHubMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [userMenuPos, setUserMenuPos] = useState<{ top: number; right: number } | null>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const gitHubMenuRef = useRef<HTMLDivElement>(null);
@@ -111,7 +115,11 @@ export default function Toolbar({
         WebkitAppRegion: 'no-drag' }}>
         <div
           style={{ ...styles.projectPath, cursor: 'pointer' }}
-          onClick={() => setShowProjectMenu((v) => !v)}
+          onClick={() => {
+            const rect = projectMenuRef.current?.getBoundingClientRect();
+            if (rect) setProjectMenuPos({ top: rect.bottom + 6, left: rect.left });
+            setShowProjectMenu((v) => !v);
+          }}
           title="Trocar projeto"
         >
           <span style={{ color: '#72757f' }}>~/</span>
@@ -127,18 +135,6 @@ export default function Toolbar({
             <path d="M1 2.5l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
         </div>
-        {showProjectMenu && (
-          <div style={styles.dropMenu}>
-            <button style={styles.dropItem} onClick={() => { setShowProjectMenu(false); onOpenFolder(); }}>
-              <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M.5 2A1.5 1.5 0 0 1 2 .5h2.5L6 2H10A1.5 1.5 0 0 1 11.5 3.5v5A1.5 1.5 0 0 1 10 10H2A1.5 1.5 0 0 1 .5 8.5V2Z" stroke="currentColor" strokeWidth="1" fill="none"/></svg>
-              Abrir pasta local
-            </button>
-            <button style={styles.dropItem} onClick={() => { setShowProjectMenu(false); onSwitchRepo?.(); }}>
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-              Clonar repositório
-            </button>
-          </div>
-        )}
       </div>
 
       <div style={sep} />
@@ -204,7 +200,15 @@ export default function Toolbar({
             cursor: 'pointer', transition: 'all .15s',
             border: isGitHubConnected ? '1px solid rgba(60,176,67,0.2)' : '1px solid transparent',
           }}
-          onClick={() => isGitHubConnected ? setShowGitHubMenu((v) => !v) : onToggleGit()}
+          onClick={() => {
+            if (isGitHubConnected) {
+              const rect = gitHubMenuRef.current?.getBoundingClientRect();
+              if (rect) setGitHubMenuPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+              setShowGitHubMenu((v) => !v);
+            } else {
+              onToggleGit();
+            }
+          }}
           title={isGitHubConnected ? `GitHub: ${gitHubUser || 'conectado'} — clique para opções` : 'Painel Git'}
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill={isGitHubConnected ? '#3CB043' : '#72757f'}>
@@ -223,27 +227,6 @@ export default function Toolbar({
             </svg>
           )}
         </div>
-        {showGitHubMenu && isGitHubConnected && (
-          <div style={{ ...styles.dropMenu, right: 0, left: 'auto', minWidth: 180 }}>
-            <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid rgba(0,0,0,0.06)', // @ts-expect-error no-drag
-              WebkitAppRegion: 'no-drag' }}>
-              <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>GitHub</div>
-              {gitHubUser && <div style={{ fontSize: 12, fontWeight: 500, color: '#1a1c20', marginTop: 2 }}>{gitHubUser}</div>}
-            </div>
-            <button style={styles.dropItem} onClick={() => { setShowGitHubMenu(false); onToggleGit(); }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 6h10M6 1v10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
-              Abrir painel Git
-            </button>
-            <button style={styles.dropItem} onClick={() => { setShowGitHubMenu(false); onGitHubSwitchAccount?.(); }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.1" /><path d="M1 11c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" strokeWidth="1.1" fill="none" /></svg>
-              Trocar conta
-            </button>
-            <button style={{ ...styles.dropItem, color: '#d44' }} onClick={() => { setShowGitHubMenu(false); onGitHubDisconnect?.(); }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7.5 4.5L10 7m0 0L7.5 9.5M10 7H4M5 2H2.5A1.5 1.5 0 0 0 1 3.5v5A1.5 1.5 0 0 0 2.5 10H5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
-              Sair do GitHub
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Voice button */}
@@ -306,7 +289,11 @@ export default function Toolbar({
           WebkitAppRegion: 'no-drag' }}>
           <button
             style={{ ...pill(false), padding: '3px 8px', gap: 7 }}
-            onClick={() => setShowUserMenu((v) => !v)}
+            onClick={() => {
+              const rect = userMenuRef.current?.getBoundingClientRect();
+              if (rect) setUserMenuPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+              setShowUserMenu((v) => !v);
+            }}
             title={session.name}
           >
             {session.avatar ? (
@@ -318,26 +305,6 @@ export default function Toolbar({
             )}
             <span style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{session.name.split(' ')[0]}</span>
           </button>
-          {showUserMenu && (
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 999,
-              background: 'rgba(240,241,245,0.97)', backdropFilter: 'blur(20px)',
-              borderRadius: 10, minWidth: 140,
-              boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset, 0 8px 32px rgba(0,0,0,0.14)',
-              border: '1px solid rgba(255,255,255,0.5)',
-              overflow: 'hidden',
-            }}>
-              <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: '#1a1c20', fontFamily: '-apple-system, sans-serif' }}>{session.name}</div>
-              </div>
-              <button
-                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#d44', fontFamily: '-apple-system, sans-serif', textAlign: 'left' as const }}
-                onClick={() => { setShowUserMenu(false); onLogout?.(); }}
-              >
-                Sair
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -348,6 +315,67 @@ export default function Toolbar({
         }
       `}</style>
     </div>
+
+    {/* Portals — renderizados fora da drag region */}
+    {showProjectMenu && projectMenuPos && ReactDOM.createPortal(
+      <div
+        ref={projectMenuRef}
+        style={{ ...styles.dropMenu, position: 'fixed', top: projectMenuPos.top, left: projectMenuPos.left }}
+      >
+        <button style={styles.dropItem} onClick={() => { setShowProjectMenu(false); onOpenFolder(); }}>
+          <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M.5 2A1.5 1.5 0 0 1 2 .5h2.5L6 2H10A1.5 1.5 0 0 1 11.5 3.5v5A1.5 1.5 0 0 1 10 10H2A1.5 1.5 0 0 1 .5 8.5V2Z" stroke="currentColor" strokeWidth="1" fill="none"/></svg>
+          Abrir pasta local
+        </button>
+        <button style={styles.dropItem} onClick={() => { setShowProjectMenu(false); onSwitchRepo?.(); }}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          Clonar repositório
+        </button>
+      </div>,
+      document.body
+    )}
+
+    {showGitHubMenu && isGitHubConnected && gitHubMenuPos && ReactDOM.createPortal(
+      <div
+        ref={gitHubMenuRef}
+        style={{ ...styles.dropMenu, position: 'fixed', top: gitHubMenuPos.top, right: gitHubMenuPos.right, left: 'auto', minWidth: 180 }}
+      >
+        <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+          <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>GitHub</div>
+          {gitHubUser && <div style={{ fontSize: 12, fontWeight: 500, color: '#1a1c20', marginTop: 2 }}>{gitHubUser}</div>}
+        </div>
+        <button style={styles.dropItem} onClick={() => { setShowGitHubMenu(false); onToggleGit(); }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 6h10M6 1v10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
+          Abrir painel Git
+        </button>
+        <button style={styles.dropItem} onClick={() => { setShowGitHubMenu(false); onGitHubSwitchAccount?.(); }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.1" /><path d="M1 11c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" strokeWidth="1.1" fill="none" /></svg>
+          Trocar conta
+        </button>
+        <button style={{ ...styles.dropItem, color: '#d44' }} onClick={() => { setShowGitHubMenu(false); onGitHubDisconnect?.(); }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7.5 4.5L10 7m0 0L7.5 9.5M10 7H4M5 2H2.5A1.5 1.5 0 0 0 1 3.5v5A1.5 1.5 0 0 0 2.5 10H5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+          Sair do GitHub
+        </button>
+      </div>,
+      document.body
+    )}
+
+    {showUserMenu && session && userMenuPos && ReactDOM.createPortal(
+      <div
+        ref={userMenuRef}
+        style={{ ...styles.dropMenu, position: 'fixed', top: userMenuPos.top, right: userMenuPos.right, left: 'auto', minWidth: 140 }}
+      >
+        <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: '#1a1c20', fontFamily: '-apple-system, sans-serif' }}>{session.name}</div>
+        </div>
+        <button
+          style={{ ...styles.dropItem, color: '#d44' }}
+          onClick={() => { setShowUserMenu(false); onLogout?.(); }}
+        >
+          Sair
+        </button>
+      </div>,
+      document.body
+    )}
   );
 }
 
