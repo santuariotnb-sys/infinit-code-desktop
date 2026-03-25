@@ -9,6 +9,7 @@ import { useSkills } from '../hooks/useSkills';
 import ChatMessages from './IntelliChat/ChatMessages';
 import ChatInput from './IntelliChat/ChatInput';
 import ChatEmptyState from './IntelliChat/ChatEmptyState';
+import MicPermissionModal from './MicPermissionModal';
 
 type AIProvider = 'claude' | 'gemini' | 'groq' | 'openrouter';
 
@@ -83,6 +84,49 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   const files = useFileAttachments({ projectPath, activeFile, inputValue: input, onInputChange: setInput });
   useSkills(projectPath); // carrega skills no boot
   const isSendingRef = useRef(false);
+  const provStripRef = useRef<HTMLDivElement>(null);
+  const didDragRef = useRef(false);
+
+  // Drag-to-scroll no carousel de providers — pointer events + setPointerCapture
+  useEffect(() => {
+    const el = provStripRef.current;
+    if (!el) return;
+    let startX = 0;
+    let scrollLeft = 0;
+    let active = false;
+
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      active = true;
+      didDragRef.current = false;
+      startX = e.clientX;
+      scrollLeft = el.scrollLeft;
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = 'grabbing';
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!active) return;
+      const dx = e.clientX - startX;
+      if (Math.abs(dx) > 4) didDragRef.current = true;
+      el.scrollLeft = scrollLeft - dx;
+    };
+    const onUp = (e: PointerEvent) => {
+      active = false;
+      el.releasePointerCapture(e.pointerId);
+      el.style.cursor = 'grab';
+    };
+
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
 
   // Verifica quais providers têm API key salva
   useEffect(() => {
@@ -334,25 +378,83 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         )}
       </div>
 
-      {/* ── Row 2: Provider tabs + model + toggles ────────────────── */}
+      {/* ── Provider strip (carousel arrastável) ─────────────────── */}
+      <div
+        ref={provStripRef}
+        style={styles.providerStrip}
+        onMouseDown={(e) => {
+          drag.current = { isDown: true, startX: e.pageX - (provStripRef.current?.offsetLeft ?? 0), scrollLeft: provStripRef.current?.scrollLeft ?? 0 };
+          if (provStripRef.current) provStripRef.current.style.cursor = 'grabbing';
+        }}
+        onMouseLeave={() => {
+          drag.current.isDown = false;
+          if (provStripRef.current) provStripRef.current.style.cursor = 'grab';
+        }}
+        onMouseUp={() => {
+          drag.current.isDown = false;
+          if (provStripRef.current) provStripRef.current.style.cursor = 'grab';
+        }}
+        onMouseMove={(e) => {
+          if (!drag.current.isDown || !provStripRef.current) return;
+          e.preventDefault();
+          const x = e.pageX - (provStripRef.current.offsetLeft ?? 0);
+          const walk = (x - drag.current.startX) * 1.2;
+          provStripRef.current.scrollLeft = drag.current.scrollLeft - walk;
+        }}
+      >
+        {([
+          { id: 'claude',      icon: '∞',  label: 'Claude',     sub: 'CLI · sem API key' },
+          { id: 'gemini',      icon: '✦',  label: 'Gemini',     sub: 'Google AI' },
+          { id: 'groq',        icon: '⚡', label: 'Groq',       sub: 'Llama · Mixtral' },
+          { id: 'openrouter',  icon: '◈',  label: 'OpenRouter', sub: 'Multi-modelo' },
+        ] as const).map((p) => {
+          const isActive = selectedProvider === p.id;
+          const hasKey = p.id === 'claude' || savedKeys[p.id];
+          return (
+            <button
+              key={p.id}
+              onClick={() => {
+                setSelectedProvider(p.id as AIProvider);
+                if (p.id !== 'claude') setSelectedExtModel(PROVIDER_MODELS[p.id as Exclude<AIProvider, 'claude'>][0].id);
+                chat.clearSession();
+              }}
+              style={{
+                ...styles.provCard,
+                ...(isActive ? styles.provCardActive : {}),
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = D.borderMed;
+                  (e.currentTarget as HTMLButtonElement).style.background = D.surface;
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = D.border;
+                  (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                }
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              title={p.id === 'claude' ? 'Claude Code CLI' : `${p.label} ${hasKey ? '✓ configurado' : '— sem API key'}`}
+            >
+              <span style={{ ...styles.provCardIcon, color: isActive ? D.accent : D.textDim }}>{p.icon}</span>
+              <span style={styles.provCardInfo}>
+                <span style={{ ...styles.provCardLabel, color: isActive ? D.text : D.textMid }}>
+                  {p.label}
+                  {!hasKey && <span style={{ color: D.error, marginLeft: 3, fontSize: 7 }}>●</span>}
+                </span>
+                <span style={styles.provCardSub}>{p.sub}</span>
+              </span>
+              {isActive && <span style={styles.provCardDot} />}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Row 2: Model + toggles ────────────────────────────────── */}
       <div style={styles.controlRow}>
-        {(['claude', 'gemini', 'groq', 'openrouter'] as AIProvider[]).map((p) => (
-          <button
-            key={p}
-            onClick={() => {
-              setSelectedProvider(p);
-              if (p !== 'claude') setSelectedExtModel(PROVIDER_MODELS[p as Exclude<AIProvider, 'claude'>][0].id);
-              chat.clearSession();
-            }}
-            style={{ ...styles.provTab, ...(selectedProvider === p ? styles.provTabActive : {}) }}
-            title={p === 'claude' ? 'Claude Code CLI' : `${p} ${savedKeys[p] ? '✓ configurado' : '— sem API key'}`}
-          >
-            {p === 'claude' ? '∞' : p === 'gemini' ? '✦' : p === 'groq' ? '⚡' : '◈'}
-            {' '}{p === 'claude' ? 'Claude' : p === 'openrouter' ? 'OR' : p.charAt(0).toUpperCase() + p.slice(1)}
-            {p !== 'claude' && !savedKeys[p] && <span style={{ color: D.error, marginLeft: 2, fontSize: 7 }}>●</span>}
-          </button>
-        ))}
-        <div style={styles.divider} />
         {selectedProvider === 'claude' ? (
           <div style={styles.modelTabs}>
             {([
@@ -536,6 +638,14 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         onScreenshot={files.captureScreenshot}
         hasActiveFile={Boolean(activeFile)}
       />
+
+      {/* Modal de permissão de microfone — abre Preferências do Sistema */}
+      {voice.needsPermission && (
+        <MicPermissionModal
+          onAllow={voice.dismissPermission}
+          onDeny={voice.dismissPermission}
+        />
+      )}
     </div>
   );
 }
@@ -587,6 +697,44 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13, padding: '2px 4px', lineHeight: 1, flexShrink: 0,
   },
 
+  // ── Provider strip (carousel)
+  providerStrip: {
+    display: 'flex', alignItems: 'stretch', gap: 4,
+    padding: '6px 10px',
+    borderBottom: `1px solid ${D.border}`,
+    background: D.bg,
+    flexShrink: 0,
+    overflowX: 'auto',
+    scrollbarWidth: 'none',
+    cursor: 'grab',
+    userSelect: 'none',
+  } as React.CSSProperties,
+  provCard: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'transparent', border: `1px solid ${D.border}`,
+    borderRadius: 8, padding: '7px 14px',
+    cursor: 'pointer', flexShrink: 0,
+    fontFamily: 'inherit', textAlign: 'left',
+    transition: 'border-color .12s, background .12s, transform .12s',
+    position: 'relative', scrollSnapAlign: 'start',
+    minWidth: 110,
+  } as React.CSSProperties,
+  provCardActive: {
+    background: D.accentBg,
+    border: `1px solid ${D.accentBorder}`,
+    transform: 'translateY(0)',
+  } as React.CSSProperties,
+  provCardIcon: { fontSize: 14, lineHeight: 1, flexShrink: 0 },
+  provCardInfo: { display: 'flex', flexDirection: 'column', gap: 1 } as React.CSSProperties,
+  provCardLabel: { fontSize: 11, fontWeight: 600, lineHeight: 1 },
+  provCardSub: { fontSize: 9, color: D.textDim, fontFamily: 'monospace', lineHeight: 1 },
+  provCardDot: {
+    position: 'absolute', bottom: -1, left: '50%',
+    transform: 'translateX(-50%)',
+    width: 16, height: 2, borderRadius: 1,
+    background: D.accent,
+  } as React.CSSProperties,
+
   // ── Row 2: controls
   controlRow: {
     display: 'flex', alignItems: 'center', gap: 2,
@@ -595,16 +743,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: D.bg,
     flexShrink: 0,
     minHeight: 30,
-  },
-  provTab: {
-    background: 'none', border: '1px solid transparent',
-    color: D.textDim, borderRadius: 4,
-    padding: '2px 7px', fontSize: 10,
-    cursor: 'pointer', fontFamily: 'monospace',
-    transition: 'all .12s', flexShrink: 0,
-  },
-  provTabActive: {
-    background: D.accentBg, border: `1px solid ${D.accentBorder}`, color: D.accent,
   },
   divider: { width: 1, height: 14, background: D.border, margin: '0 4px', flexShrink: 0 },
   modelTabs: { display: 'flex', gap: 1, background: D.surface, borderRadius: 5, padding: 2 },

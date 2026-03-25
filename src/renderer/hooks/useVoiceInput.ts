@@ -10,6 +10,7 @@ interface UseVoiceInputOptions {
 export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
   const [isListening, setIsListening] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [needsPermission, setNeedsPermission] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -110,24 +111,25 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
     }
 
     setVoiceError(null);
+    setNeedsPermission(false);
 
-    // Solicita permissão ao macOS na primeira vez (aciona diálogo nativo)
+    // Solicita permissão ao macOS na primeira vez (aciona diálogo nativo do sistema)
     try {
       const perm = await window.api.media?.requestMicrophone?.();
       if (perm && !perm.granted) {
-        setVoiceError('Microfone bloqueado. Autorize em Preferências do Sistema → Privacidade → Microfone.');
+        setNeedsPermission(true); // abre modal em vez de erro de texto
         return;
       }
     } catch { /* tenta getUserMedia mesmo assim */ }
 
-    // Verifica acesso ao microfone — também garante que o diálogo aparece no Electron
+    // Verifica acesso ao microfone via getUserMedia
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
       const name = (err as DOMException).name;
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-        setVoiceError('Microfone bloqueado. Autorize em Preferências do Sistema → Privacidade → Microfone.');
+        setNeedsPermission(true); // abre modal de permissão
       } else if (name === 'NotFoundError') {
         setVoiceError('Nenhum microfone encontrado. Verifique se há um dispositivo de áudio conectado.');
       } else {
@@ -166,7 +168,7 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
             setVoiceError('Não foi possível iniciar gravação. Verifique o microfone.');
           }
         } else if (e.error === 'not-allowed') {
-          setVoiceError('Microfone bloqueado. Autorize em Preferências do Sistema → Privacidade → Microfone.');
+          setNeedsPermission(true);
         } else if (e.error !== 'no-speech') {
           setVoiceError(`Erro de reconhecimento: ${e.error}`);
         }
@@ -211,7 +213,9 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
     isSupported,
     voiceError,
     clearError,
+    needsPermission,
+    dismissPermission: () => setNeedsPermission(false),
     handleVoiceToggle,
-    analyserRef, // exposto para componente de visualização
+    analyserRef,
   };
 }
