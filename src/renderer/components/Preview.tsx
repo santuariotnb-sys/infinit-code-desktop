@@ -123,6 +123,18 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   const [draftPath, setDraftPath] = useState('/');
   const [iframeRetries, setIframeRetries] = useState(0);
 
+  // ── Histórico de navegação (back/forward) ────────────────
+  const [navHistory, setNavHistory] = useState<string[]>(['/']);
+  const [historyIdx, setHistoryIdx] = useState(0);
+  const canGoBack = historyIdx > 0;
+  const canGoForward = historyIdx < navHistory.length - 1;
+
+  // ── Menu de contexto ─────────────────────────────────────
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
   // Rotas detectadas do router do projeto
   const [routes, setRoutes] = useState<string[]>([]);
   const [showRoutesPicker, setShowRoutesPicker] = useState(false);
@@ -178,17 +190,22 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     return cleanup;
   }, [projectPath, detectRoutes]);
 
-  // Fecha dropdown ao clicar fora
+  // Fecha dropdowns ao clicar fora
   useEffect(() => {
-    if (!showRoutesPicker) return;
     function handleClickOutside(e: MouseEvent) {
-      if (routesPickerRef.current && !routesPickerRef.current.contains(e.target as Node)) {
+      if (showRoutesPicker && routesPickerRef.current && !routesPickerRef.current.contains(e.target as Node)) {
         setShowRoutesPicker(false);
+      }
+      if (ctxMenu && ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) {
+        setCtxMenu(null);
+      }
+      if (showMoreMenu && moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showRoutesPicker]);
+  }, [showRoutesPicker, ctxMenu, showMoreMenu]);
 
   // Reset ao trocar de projeto — sempre primeiro
   useEffect(() => {
@@ -361,12 +378,39 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     });
   }
 
-  function navigateTo(path: string) {
+  function navigateTo(path: string, pushHistory = true) {
     const normalized = path.startsWith('/') ? path : `/${path}`;
     setCurrentPath(normalized);
     setDraftPath(normalized);
     setEditingPath(false);
     setShowRoutesPicker(false);
+    setIframeKey(k => k + 1);
+    if (pushHistory) {
+      setNavHistory(prev => {
+        const trimmed = prev.slice(0, historyIdx + 1);
+        return [...trimmed, normalized];
+      });
+      setHistoryIdx(i => i + 1);
+    }
+  }
+
+  function goBack() {
+    if (!canGoBack) return;
+    const newIdx = historyIdx - 1;
+    setHistoryIdx(newIdx);
+    const path = navHistory[newIdx];
+    setCurrentPath(path);
+    setDraftPath(path);
+    setIframeKey(k => k + 1);
+  }
+
+  function goForward() {
+    if (!canGoForward) return;
+    const newIdx = historyIdx + 1;
+    setHistoryIdx(newIdx);
+    const path = navHistory[newIdx];
+    setCurrentPath(path);
+    setDraftPath(path);
     setIframeKey(k => k + 1);
   }
 
@@ -379,15 +423,105 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     if (port) window.api.shell.openExternal(`http://localhost:${port}${currentPath}`);
   }
 
+  function copyUrl() {
+    if (port) navigator.clipboard.writeText(`http://localhost:${port}${currentPath}`).catch(() => {});
+  }
+
+  async function pasteAndNavigate() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text.startsWith('/')) navigateTo(text);
+      else if (text.startsWith('http://localhost')) {
+        const url = new URL(text);
+        navigateTo(url.pathname);
+      }
+    } catch { /* permissão negada */ }
+  }
+
+  function printPage() {
+    try {
+      iframeRef.current?.contentWindow?.print();
+    } catch { window.print(); }
+  }
+
+  function downloadPage() {
+    if (!port) return;
+    const url = `http://localhost:${port}${currentPath}`;
+    window.api.shell.openExternal(url);
+  }
+
+  function searchGoogle() {
+    const query = encodeURIComponent(`site:localhost:${port ?? ''} ${currentPath}`);
+    window.api.shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(currentPath.slice(1) || 'localhost')}`);
+    void query; // suppress unused warning
+  }
+
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+    setShowMoreMenu(false);
+  }
+
+  function closeCtx() { setCtxMenu(null); }
+
   const isLive = status === 'live';
   const isConnecting = status === 'loading';
   const dotColor = !port ? '#333' : isLive ? '#22c55e' : isConnecting ? '#f59e0b' : '#ef4444';
   const src = port ? `http://localhost:${port}${currentPath}` : '';
 
+  // ── Items reutilizáveis do menu de contexto/ações ────────
+  function renderCtxItems(close: () => void) {
+    const item = (label: string, icon: string, action: () => void, disabled = false, danger = false) => (
+      <button
+        key={label}
+        style={{ ...s.ctxItem, opacity: disabled ? 0.3 : 1, color: danger ? '#f87171' : '#ddd', cursor: disabled ? 'default' : 'pointer' }}
+        onClick={disabled ? undefined : () => { close(); action(); }}
+        disabled={disabled}
+      >
+        <span style={s.ctxIcon}>{icon}</span>
+        {label}
+      </button>
+    );
+    const sep = (key: string) => <div key={key} style={s.ctxSep} />;
+
+    return (
+      <>
+        {item('Voltar', '←', goBack, !canGoBack)}
+        {item('Avançar', '→', goForward, !canGoForward)}
+        {item('Recarregar', '↺', handleRefresh, !port)}
+        {sep('s1')}
+        {item('Copiar URL', '⎘', copyUrl, !port)}
+        {item('Colar e navegar', '⎗', pasteAndNavigate, !port)}
+        {sep('s2')}
+        {item('Imprimir', '⎙', printPage, !port)}
+        {item('Download da página', '⬇', downloadPage, !port)}
+        {item('Pesquisar no Google', '🔍', searchGoogle)}
+        {sep('s3')}
+        {item('Abrir no browser', '🌐', openExternal, !port)}
+        {sep('s4')}
+        <div style={{ padding: '4px 12px 2px', fontSize: 9, color: '#555', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Viewport</div>
+        {(['mobile', 'tablet', 'desktop'] as ViewportSize[]).map(v =>
+          item(`${v.charAt(0).toUpperCase() + v.slice(1)} (${VIEWPORT_WIDTH[v]})`,
+            v === 'mobile' ? '📱' : v === 'tablet' ? '📋' : '🖥',
+            () => setViewport(v), false, false
+          )
+        )}
+      </>
+    );
+  }
+
   return (
     <div style={s.root}>
       {/* ── Browser toolbar ── */}
       <div style={{ ...s.toolbar, borderBottomColor: hmrFlash ? '#22c55e' : '#1e1e1e' }}>
+
+        {/* Back / Forward */}
+        <button style={{ ...s.iconBtn, opacity: canGoBack ? 0.8 : 0.2 }} onClick={goBack} disabled={!canGoBack} title="Voltar (Alt+←)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+        </button>
+        <button style={{ ...s.iconBtn, opacity: canGoForward ? 0.8 : 0.2 }} onClick={goForward} disabled={!canGoForward} title="Avançar (Alt+→)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+        </button>
 
         {/* Status dot + badge ao vivo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -459,13 +593,29 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
           )}
         </div>
 
-        {/* Ações */}
+        {/* Ações fixas */}
         <button style={{ ...s.iconBtn, opacity: port ? 0.7 : 0.25 }} onClick={openExternal} disabled={!port} title="Abrir no browser">
           <IconExternal />
         </button>
-        <button style={{ ...s.iconBtn, opacity: port ? 0.7 : 0.25 }} onClick={handleRefresh} disabled={!port} title="Recarregar">
+        <button style={{ ...s.iconBtn, opacity: port ? 0.7 : 0.25 }} onClick={handleRefresh} disabled={!port} title="Recarregar (F5)">
           <IconRefresh />
         </button>
+
+        {/* Botão ⋯ — abre menu de ações (left-click) */}
+        <div ref={moreMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            style={{ ...s.iconBtn, opacity: port ? 0.8 : 0.3, fontSize: 15, letterSpacing: 1 }}
+            onClick={() => setShowMoreMenu(v => !v)}
+            title="Mais ações"
+          >
+            ⋯
+          </button>
+          {showMoreMenu && (
+            <div style={s.ctxMenuBox} onContextMenu={e => e.preventDefault()}>
+              {renderCtxItems(() => setShowMoreMenu(false))}
+            </div>
+          )}
+        </div>
 
         <div style={s.sep} />
 
@@ -485,6 +635,17 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
       {/* ── Error banner ── */}
       {serverError && (
         <div style={s.errorBanner}>⚠ Erro no servidor — ver terminal</div>
+      )}
+
+      {/* ── Menu de contexto flutuante (right-click) ── */}
+      {ctxMenu && (
+        <div
+          ref={ctxMenuRef}
+          style={{ ...s.ctxMenuBox, position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 9999 }}
+          onContextMenu={e => e.preventDefault()}
+        >
+          {renderCtxItems(closeCtx)}
+        </div>
       )}
 
       {/* ── Content ── */}
@@ -528,7 +689,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
           )}
         </div>
       ) : (
-        <div style={s.content}>
+        <div style={s.content} onContextMenu={handleContextMenu}>
           {status === 'loading' && (
             <div style={s.skeleton}>
               <div style={s.skBar} />
@@ -536,7 +697,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
               <div style={{ ...s.skBar, width: '80%', marginTop: 8 }} />
             </div>
           )}
-          <div style={{ ...s.iframeWrap, display: status === 'loading' ? 'none' : 'flex', justifyContent: 'center' }}>
+          <div style={{ ...s.iframeWrap, display: status === 'loading' ? 'none' : 'flex', justifyContent: 'center', position: 'relative' }}>
             <iframe
               ref={iframeRef}
               key={iframeKey}
@@ -545,6 +706,11 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
               title="Preview"
               onLoad={handleLoad}
               onError={handleIframeError}
+            />
+            {/* Overlay transparente — captura right-click que sai do iframe */}
+            <div
+              style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+              onContextMenu={handleContextMenu}
             />
           </div>
         </div>
@@ -822,5 +988,43 @@ const s: Record<string, React.CSSProperties> = {
     border: 'none',
     background: '#fff',
     flexShrink: 0,
+  },
+
+  // ── Context menu ────────────────────────────────────────
+  ctxMenuBox: {
+    background: '#1a1a1a',
+    border: '1px solid #2a2a2a',
+    borderRadius: 9,
+    padding: '4px 0',
+    minWidth: 200,
+    boxShadow: '0 12px 40px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.04) inset',
+    zIndex: 500,
+    overflow: 'hidden',
+  },
+  ctxItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    padding: '7px 14px',
+    background: 'none',
+    border: 'none',
+    fontSize: 12,
+    fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+    textAlign: 'left' as const,
+    transition: 'background 0.1s',
+    whiteSpace: 'nowrap' as const,
+  },
+  ctxIcon: {
+    fontSize: 12,
+    width: 18,
+    textAlign: 'center' as const,
+    flexShrink: 0,
+    opacity: 0.8,
+  },
+  ctxSep: {
+    height: 1,
+    background: '#2a2a2a',
+    margin: '3px 0',
   },
 };
