@@ -242,7 +242,13 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
           ] as const).map(({ key: m, label, title }) => (
             <button
               key={m}
-              onClick={() => setSelectedModel(m)}
+              onClick={() => {
+                if (m === selectedModel) return;
+                setSelectedModel(m);
+                // Sessão antiga usa o modelo com que foi criada — ao trocar,
+                // limpa para que a próxima mensagem inicie uma nova sessão
+                chat.clearSession();
+              }}
               style={{
                 background: selectedModel === m ? 'rgba(60,176,67,0.15)' : 'transparent',
                 border: selectedModel === m ? '1px solid rgba(60,176,67,0.3)' : '1px solid transparent',

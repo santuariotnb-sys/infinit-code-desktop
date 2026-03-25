@@ -83,6 +83,12 @@ export function useChatMessages() {
     setStreamingText('');
   }, []);
 
+  // Limpa apenas a sessão (mantém histórico) — usado ao trocar de modelo
+  const clearSession = useCallback(async () => {
+    await window.api.claude.clearSession?.();
+    setSessionId(null);
+  }, []);
+
   return {
     messages,
     streamingText,
@@ -97,5 +103,6 @@ export function useChatMessages() {
     appendChunk,
     finishStreaming,
     clearMessages,
+    clearSession,
   };
 }
