@@ -5,6 +5,7 @@ export interface ChatContext {
   cursorLine?: number;
   selection?: string;
   terminalOutput?: string;
+  projectContext?: string; // índice completo do projeto (package.json, tree, rotas, etc.)
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
@@ -27,6 +28,11 @@ function hasError(output: string): boolean {
 
 export function buildPrompt(message: string, ctx: ChatContext): string {
   const parts: string[] = [];
+
+  // Contexto completo do projeto — sempre primeiro quando disponível
+  if (ctx.projectContext) {
+    parts.push(`<project_context>\n${ctx.projectContext}\n</project_context>`);
+  }
 
   if (needsCodeContext(message) && ctx.activeFile && ctx.activeFileContent) {
     const lines = ctx.activeFileContent.split('\n');

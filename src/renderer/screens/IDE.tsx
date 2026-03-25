@@ -16,6 +16,7 @@ import GitHubAuthModal from '../components/GitHubAuthModal';
 import { useFileManager } from '../hooks/useFileManager';
 import { useTerminal } from '../hooks/useTerminal';
 import { usePanels } from '../hooks/usePanels';
+import { useProjectIndex } from '../hooks/useProjectIndex';
 import { useGitHub } from '../hooks/useGitHub';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useToast } from '../hooks/useToast';
@@ -49,6 +50,7 @@ function makeDragH(
 export default function IDE() {
   const panels = usePanels();
   const fileManager = useFileManager();
+  const { projectContext } = useProjectIndex(fileManager.projectPath, fileManager.files);
   const terminal = useTerminal({
     onPortDetected: () => panels.setShowPreview(true),
   });
@@ -342,6 +344,7 @@ export default function IDE() {
                     terminalOutput={terminal.terminalOutput}
                     onOpenFile={fileManager.handleSelectFile}
                     onStreamingChange={setIsChatStreaming}
+                    projectContext={projectContext}
                   />
                 </ErrorBoundary>
               )}
@@ -355,6 +358,7 @@ export default function IDE() {
                     terminalOutput=""
                     onOpenFile={fileManager.handleSelectFile}
                     onStreamingChange={setIsChatStreaming}
+                    projectContext={projectContext}
                   />
                 </ErrorBoundary>
               )}

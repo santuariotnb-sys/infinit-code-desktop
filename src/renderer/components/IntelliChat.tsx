@@ -17,9 +17,10 @@ export interface IntelliChatProps {
   terminalOutput: string;
   onOpenFile?: (path: string) => void;
   onStreamingChange?: (isStreaming: boolean) => void;
+  projectContext?: string; // índice completo do projeto
 }
 
-export default function IntelliChat({ mode = 'project', projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile, onStreamingChange }: IntelliChatProps) {
+export default function IntelliChat({ mode = 'project', projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile, onStreamingChange, projectContext }: IntelliChatProps) {
   const [input, setInput] = useState('');
   const [actionCards, setActionCards] = useState<ActionCard[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -71,6 +72,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
       activeFile: isResearch ? undefined : activeFile?.path,
       activeFileContent: isResearch ? undefined : activeFile?.content,
       terminalOutput: isResearch ? '' : terminalOutput.split('\n').slice(-30).join('\n'),
+      projectContext: isResearch ? undefined : projectContext,
       history: chat.messages.filter((m) => m.role !== 'system').slice(-6).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     };
 
@@ -239,7 +241,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         <div style={styles.tokenBar}>
           {(() => {
             const isRes = mode === 'research';
-            const ctx: ChatContext = { cwd: projectPath ?? '~', activeFile: isRes ? undefined : activeFile?.path, activeFileContent: isRes ? undefined : activeFile?.content, terminalOutput: isRes ? '' : terminalOutput.split('\n').slice(-10).join('\n'), history: chat.messages.filter(m => m.role !== 'system').slice(-4).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) };
+            const ctx: ChatContext = { cwd: projectPath ?? '~', activeFile: isRes ? undefined : activeFile?.path, activeFileContent: isRes ? undefined : activeFile?.content, terminalOutput: isRes ? '' : terminalOutput.split('\n').slice(-10).join('\n'), projectContext: isRes ? undefined : projectContext, history: chat.messages.filter(m => m.role !== 'system').slice(-4).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })) };
             const tokens = estimateTokens(buildPrompt(input, ctx));
             const color = tokenColor(tokens);
             return (
