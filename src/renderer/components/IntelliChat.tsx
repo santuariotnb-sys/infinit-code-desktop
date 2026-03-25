@@ -593,6 +593,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         onVoiceToggle={voice.handleVoiceToggle}
         isVoiceSupported={voice.isSupported}
         isListening={voice.isListening}
+        analyserRef={voice.analyserRef}
         isStreaming={chat.isStreaming}
         attached={files.attached}
         onRemoveAttachment={files.removeAttachment}

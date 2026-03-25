@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import VoiceWaveform from './VoiceWaveform';
 
 interface AttachedFile {
   name: string;
@@ -14,6 +15,7 @@ interface ChatInputProps {
   onVoiceToggle: () => void;
   isVoiceSupported: boolean;
   isListening: boolean;
+  analyserRef?: React.MutableRefObject<AnalyserNode | null>;
   isStreaming: boolean;
   attached: AttachedFile[];
   onRemoveAttachment: (index: number) => void;
@@ -31,6 +33,7 @@ export default function ChatInput({
   onVoiceToggle,
   isVoiceSupported,
   isListening,
+  analyserRef,
   isStreaming,
   attached,
   onRemoveAttachment,
@@ -53,6 +56,10 @@ export default function ChatInput({
             </div>
           ))}
         </div>
+      )}
+
+      {analyserRef && (
+        <VoiceWaveform analyserRef={analyserRef} isListening={isListening} />
       )}
 
       <div style={styles.inputToolbar}>
