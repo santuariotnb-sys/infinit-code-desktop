@@ -7,16 +7,54 @@ import os from 'os';
 // Guarda session_id por janela para memória contínua
 const sessions = new Map<number, string>();
 
+// Caminhos comuns onde o claude pode estar instalado
+const CLAUDE_SEARCH_PATHS = [
+  path.join(os.homedir(), '.local', 'bin', 'claude'),
+  '/usr/local/bin/claude',
+  '/opt/homebrew/bin/claude',
+  path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
+  '/usr/bin/claude',
+];
+
+function findClaudeBinary(): string {
+  for (const p of CLAUDE_SEARCH_PATHS) {
+    if (fs.existsSync(p)) return p;
+  }
+  // fallback: tentar via shell com PATH expandido
+  try {
+    const extraPath = [
+      path.join(os.homedir(), '.local', 'bin'),
+      '/usr/local/bin',
+      '/opt/homebrew/bin',
+    ].join(':');
+    return execSync('which claude', {
+      encoding: 'utf-8',
+      timeout: 5000,
+      env: { ...process.env, PATH: `${extraPath}:${process.env.PATH ?? ''}` },
+    }).trim();
+  } catch {
+    return 'claude'; // último recurso
+  }
+}
+
+const CLAUDE_BIN = findClaudeBinary();
+
+// PATH enriquecido para todos os spawns
+const RICH_ENV = {
+  ...process.env,
+  PATH: [
+    path.join(os.homedir(), '.local', 'bin'),
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    process.env.PATH ?? '',
+  ].join(':'),
+};
+
 export function registerClaudeHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('claude:check-installed', () => {
     try {
-      const cmd = process.platform === 'win32' ? 'where claude' : 'which claude';
-      const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim();
-      let version: string | undefined;
-      try {
-        version = execSync('claude --version', { encoding: 'utf-8', timeout: 5000 }).trim();
-      } catch { /* ignore */ }
-      return { installed: !!result, version };
+      const version = execSync(`"${CLAUDE_BIN}" --version`, { encoding: 'utf-8', timeout: 5000, env: RICH_ENV }).trim();
+      return { installed: true, version };
     } catch {
       return { installed: false };
     }
@@ -226,7 +264,7 @@ Ao revisar e escrever código:
   // ── Voice status ─────────────────────────────────────────
   ipcMain.handle('claude:voice-status', () => {
     try {
-      const versionRaw = execSync('claude --version', { encoding: 'utf-8', timeout: 5000 }).trim();
+      const versionRaw = execSync(`"${CLAUDE_BIN}" --version`, { encoding: 'utf-8', timeout: 5000, env: RICH_ENV }).trim();
       const match = versionRaw.match(/(\d+)\.(\d+)\.(\d+)/);
       if (!match) return { supported: false, version: versionRaw };
       const [, major, minor, patch] = match.map(Number);
@@ -290,9 +328,9 @@ Ao revisar e escrever código:
     }
 
     return new Promise((resolve, reject) => {
-      const proc = spawn('claude', args, {
+      const proc = spawn(CLAUDE_BIN, args, {
         cwd: payload.cwd,
-        env: { ...process.env },
+        env: RICH_ENV,
       });
 
       let newSessionId: string | null = null;
@@ -376,7 +414,7 @@ Ao revisar e escrever código:
   // ── Status do Claude Code ────────────────────────────────
   ipcMain.handle('claude:status', async () => {
     return new Promise((resolve) => {
-      const proc = spawn('claude', ['--version'], { timeout: 5000 });
+      const proc = spawn(CLAUDE_BIN, ['--version'], { timeout: 5000, env: RICH_ENV });
       let version = '';
       proc.stdout.on('data', (d: Buffer) => (version += d.toString()));
       proc.on('close', (code) => resolve({ installed: code === 0, version: version.trim() }));
