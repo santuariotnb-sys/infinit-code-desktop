@@ -51,8 +51,12 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
     window.api.terminal.write(text);
   }
 
-  function runDevServer() {
-    window.api.terminal.write('npm run dev\r');
+  function runDevServer(pkgManager: string = 'npm') {
+    const cmd = pkgManager === 'bun' ? 'bun dev' :
+                pkgManager === 'pnpm' ? 'pnpm run dev' :
+                pkgManager === 'yarn' ? 'yarn dev' :
+                'npm run dev';
+    window.api.terminal.write(cmd + '\r');
   }
 
   return {

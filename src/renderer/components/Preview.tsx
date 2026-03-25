@@ -79,9 +79,11 @@ interface PreviewProps {
   terminalOutput?: string;
   onRunDev?: () => void;
   projectPath?: string | null;
+  hasNodeModules?: boolean | null;
+  pkgManager?: string;
 }
 
-export default function Preview({ terminalOutput = '', onRunDev, projectPath }: PreviewProps) {
+export default function Preview({ terminalOutput = '', onRunDev, projectPath, hasNodeModules, pkgManager = 'npm' }: PreviewProps) {
   const [port, setPort] = useState<number | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'live' | 'error'>('idle');
   const [iframeKey, setIframeKey] = useState(0);
@@ -100,13 +102,13 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath }: 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const autoStartedRef = useRef(false);
 
-  // Auto-start dev server quando projeto abre
+  // Auto-start dev server quando projeto abre — SÓ se node_modules instalado
   useEffect(() => {
-    if (projectPath && onRunDev && !autoStartedRef.current) {
+    if (projectPath && onRunDev && !autoStartedRef.current && hasNodeModules === true) {
       autoStartedRef.current = true;
-      setTimeout(() => onRunDev(), 800); // aguarda terminal criar
+      setTimeout(() => onRunDev(), 800);
     }
-  }, [projectPath]);
+  }, [projectPath, hasNodeModules]);
 
   // Reset estado quando troca de projeto
   useEffect(() => {
@@ -310,19 +312,38 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath }: 
       {/* ── Content ── */}
       {!port ? (
         <div style={s.idle}>
-          <div style={s.idleIcon}>
-            <IconDesktop />
-          </div>
+          <div style={s.idleIcon}><IconDesktop /></div>
           <p style={s.idleTitle}>Preview ao Vivo</p>
-          <p style={s.idleSubtitle}>
-            {projectPath
-              ? 'Iniciando servidor de desenvolvimento…'
-              : 'Abra um projeto para ver o preview'}
-          </p>
-          {onRunDev && (
-            <button style={s.runBtn} onClick={onRunDev}>
-              ▶ npm run dev
-            </button>
+
+          {!projectPath && (
+            <p style={s.idleSubtitle}>Abra um projeto para ver o preview</p>
+          )}
+
+          {projectPath && hasNodeModules === null && (
+            <p style={s.idleSubtitle}>Verificando dependências…</p>
+          )}
+
+          {projectPath && hasNodeModules === false && (
+            <>
+              <p style={s.idleSubtitle}>Dependências não instaladas</p>
+              <button style={s.runBtn} onClick={() => {
+                const installCmd = pkgManager === 'bun' ? 'bun install' :
+                                   pkgManager === 'pnpm' ? 'pnpm install' :
+                                   pkgManager === 'yarn' ? 'yarn' : 'npm install';
+                window.api.terminal.write(installCmd + '\r');
+              }}>
+                ↓ {pkgManager} install
+              </button>
+            </>
+          )}
+
+          {projectPath && hasNodeModules === true && onRunDev && (
+            <>
+              <p style={s.idleSubtitle}>Iniciando servidor…</p>
+              <button style={s.runBtn} onClick={onRunDev}>
+                ▶ {pkgManager} run dev
+              </button>
+            </>
           )}
         </div>
       ) : (

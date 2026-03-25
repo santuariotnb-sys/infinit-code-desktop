@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('api', {
     getHome: () => ipcRenderer.invoke('file:home'),
     watch: (dirPath: string) => ipcRenderer.invoke('file:watch', dirPath),
     unwatch: () => ipcRenderer.invoke('file:unwatch'),
+    exists: (filePath: string) => ipcRenderer.invoke('file:exists', filePath),
     onChanged: (cb: (filePath: string) => void) => {
       const handler = (_: Electron.IpcRendererEvent, p: string) => cb(p);
       ipcRenderer.on('file:changed', handler);

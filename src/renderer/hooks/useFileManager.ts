@@ -7,6 +7,15 @@ interface FileNode {
   children?: FileNode[];
 }
 
+type PkgManager = 'npm' | 'bun' | 'pnpm' | 'yarn';
+
+function detectPkgManager(fileNames: string[]): PkgManager {
+  if (fileNames.includes('bun.lock') || fileNames.includes('bun.lockb')) return 'bun';
+  if (fileNames.includes('pnpm-lock.yaml')) return 'pnpm';
+  if (fileNames.includes('yarn.lock')) return 'yarn';
+  return 'npm';
+}
+
 export function useFileManager() {
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [files, setFiles] = useState<FileNode[]>([]);
@@ -14,15 +23,22 @@ export function useFileManager() {
   const [fileContent, setFileContent] = useState('');
   const [isModified, setIsModified] = useState(false);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [pkgManager, setPkgManager] = useState<PkgManager>('npm');
+  const [hasNodeModules, setHasNodeModules] = useState<boolean | null>(null); // null = ainda verificando
 
   const loadFiles = useCallback(async (dir: string) => {
     const result = await window.api.files.readDir(dir);
     if (result?.ok) {
-      setFiles(result.data);
+      setFiles(result.data ?? []);
+      // Detecta package manager pelos arquivos de lock na raiz
+      const rootNames = (result.data ?? []).map((f: FileNode) => f.name);
+      setPkgManager(detectPkgManager(rootNames));
     } else {
-      console.error('[useFileManager] readDir falhou:', result?.error);
       setFiles([]);
     }
+    // Verifica se node_modules existe
+    const nmCheck = await window.api.files.exists(`${dir}/node_modules`);
+    setHasNodeModules(nmCheck?.exists ?? false);
   }, []);
 
   useEffect(() => {
@@ -45,6 +61,7 @@ export function useFileManager() {
     setFileContent('');
     setIsModified(false);
     setOpenTabs([]);
+    setHasNodeModules(null); // reset enquanto recarrega
   }
 
   async function handleOpenFolder() {
@@ -108,6 +125,8 @@ export function useFileManager() {
     fileContent,
     isModified,
     openTabs,
+    pkgManager,
+    hasNodeModules,
     openProject,
     handleOpenFolder,
     handleSelectFile,

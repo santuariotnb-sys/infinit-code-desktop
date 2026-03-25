@@ -23,6 +23,7 @@ interface ElectronAPI {
     getHome: () => Promise<string>;
     watch: (dirPath: string) => Promise<void>;
     unwatch: () => Promise<void>;
+    exists: (filePath: string) => Promise<{ ok: boolean; exists: boolean }>;
     onChanged: (cb: (filePath: string) => void) => () => void;
   };
   claude: {

@@ -79,6 +79,9 @@ export default function IDE() {
     if (fileManager.projectPath) panels.setShowPreview(true);
   }, [fileManager.projectPath]);
 
+  // runDevServer com package manager correto
+  const runDev = () => terminal.runDevServer(fileManager.pkgManager);
+
   useEffect(() => {
     if (terminal.detectedPort) panels.setShowPreview(true);
   }, [terminal.detectedPort]);
@@ -263,8 +266,10 @@ export default function IDE() {
                   <ErrorBoundary name="Preview">
                     <Preview
                       terminalOutput={terminal.terminalOutput}
-                      onRunDev={terminal.runDevServer}
+                      onRunDev={runDev}
                       projectPath={fileManager.projectPath}
+                      hasNodeModules={fileManager.hasNodeModules}
+                      pkgManager={fileManager.pkgManager}
                     />
                   </ErrorBoundary>
                 </div>

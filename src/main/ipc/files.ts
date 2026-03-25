@@ -143,6 +143,14 @@ export function registerFileHandlers(mainWindow: BrowserWindow): void {
     return os.homedir();
   });
 
+  ipcMain.handle('file:exists', (_event, filePath: string) => {
+    try {
+      return { ok: true, exists: fs.existsSync(filePath) };
+    } catch {
+      return { ok: true, exists: false };
+    }
+  });
+
   ipcMain.handle('file:unwatch', () => {
     if (watcher) {
       watcher.close();
