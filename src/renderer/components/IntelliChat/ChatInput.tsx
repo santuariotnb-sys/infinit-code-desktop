@@ -61,11 +61,44 @@ export default function ChatInput({
         <button style={styles.toolBtn} onClick={onScreenshot} title="Screenshot">🖼</button>
         {isVoiceSupported && (
           <button
-            style={{ ...styles.toolBtn, ...(isListening ? styles.toolBtnActive : {}) }}
+            style={{
+              ...styles.toolBtn,
+              ...(isListening ? styles.toolBtnActive : {}),
+              position: 'relative',
+            }}
             onClick={onVoiceToggle}
             title={isListening ? 'Parar gravação' : 'Gravar voz (pt-BR)'}
           >
-            🎤
+            {isListening ? (
+              <>
+                {/* Anel pulsante ao redor */}
+                <span style={{
+                  position: 'absolute', inset: -3, borderRadius: '50%',
+                  border: '1.5px solid rgba(0,255,136,0.5)',
+                  animation: 'voicePulse 1s ease-in-out infinite',
+                  pointerEvents: 'none',
+                }} />
+                <svg width="13" height="15" viewBox="0 0 13 15" fill="none" style={{ color: '#00ff88' }}>
+                  <rect x="4" y="0.5" width="5" height="9" rx="2.5" fill="currentColor" opacity=".9" />
+                  <path d="M1 7C1 9.76 3.24 12 6.5 12S12 9.76 12 7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" fill="none" />
+                  <path d="M6.5 12v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                  <rect x="3" y="3" width="1.5" height="5" rx=".75" fill="rgba(0,255,136,0.5)" style={{ animation: 'voiceBar1 .5s ease-in-out infinite alternate' }} />
+                  <rect x="5.75" y="2" width="1.5" height="7" rx=".75" fill="rgba(0,255,136,0.5)" style={{ animation: 'voiceBar2 .5s .1s ease-in-out infinite alternate' }} />
+                  <rect x="8.5" y="3" width="1.5" height="5" rx=".75" fill="rgba(0,255,136,0.5)" style={{ animation: 'voiceBar1 .5s .2s ease-in-out infinite alternate' }} />
+                </svg>
+              </>
+            ) : (
+              <svg width="12" height="14" viewBox="0 0 12 14" fill="none" style={{ opacity: 0.65 }}>
+                <rect x="3.5" y="0.5" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.1" fill="none" />
+                <path d="M1 6.5C1 9.26 3.24 11.5 6.5 11.5S12 9.26 12 6.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" />
+                <path d="M6.5 11.5v2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+              </svg>
+            )}
+            <style>{`
+              @keyframes voicePulse { 0%,100%{transform:scale(1);opacity:.5} 50%{transform:scale(1.4);opacity:1} }
+              @keyframes voiceBar1  { from{transform:scaleY(.4)} to{transform:scaleY(1)} }
+              @keyframes voiceBar2  { from{transform:scaleY(.6)} to{transform:scaleY(1)} }
+            `}</style>
           </button>
         )}
         <input

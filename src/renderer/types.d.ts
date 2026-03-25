@@ -42,6 +42,7 @@ interface ElectronAPI {
     watch: (dirPath: string) => Promise<void>;
     unwatch: () => Promise<void>;
     exists: (filePath: string) => Promise<{ ok: boolean; exists: boolean }>;
+    mkdir: (dirPath: string) => Promise<{ ok: boolean; error?: string }>;
     onChanged: (cb: (filePath: string) => void) => () => void;
   };
   claude: {

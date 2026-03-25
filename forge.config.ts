@@ -39,6 +39,10 @@ const config: ForgeConfig = {
     appBundleId: 'app.infinitcode.desktop',
     appCategoryType: 'public.app-category.developer-tools',
     icon: './assets/icon',
+    extendInfo: {
+      NSMicrophoneUsageDescription: 'O Infinit Code usa o microfone para entrada de voz em português no chat e no terminal.',
+      NSCameraUsageDescription: 'O Infinit Code pode usar a câmera para capturar screenshots do projeto.',
+    },
   },
   rebuildConfig: {},
   hooks: {

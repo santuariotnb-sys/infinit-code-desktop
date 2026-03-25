@@ -194,5 +194,6 @@ export function useFileManager() {
     handleSave,
     handleContentChange,
     closeTab,
+    reloadTree: () => { if (projectPath) loadFiles(projectPath); },
   };
 }

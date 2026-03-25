@@ -192,8 +192,8 @@ export default function GitPanel({ projectPath, onSyncProgress, onSyncDone, open
                 <button
                   style={{ ...styles.commitPushBtn, opacity: commitMsg.trim() ? 1 : 0.4 }}
                   onClick={async () => {
-                    await ops.handleCommit(commitMsg, () => setCommitMsg(''));
-                    await ops.handlePush();
+                    const ok = await ops.handleCommit(commitMsg, () => setCommitMsg(''));
+                    if (ok) await ops.handlePush();
                   }}
                   disabled={!commitMsg.trim() || ops.loading}
                 >

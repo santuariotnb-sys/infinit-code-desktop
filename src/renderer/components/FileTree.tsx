@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 interface FileNode {
   name: string;
@@ -11,6 +11,8 @@ interface FileTreeProps {
   files: FileNode[];
   selectedFile: string | null;
   onSelectFile: (path: string) => void;
+  projectPath?: string | null;
+  onCreated?: () => void;
 }
 
 function FolderIcon() {
@@ -82,20 +84,76 @@ function TreeNode({
   );
 }
 
-export default function FileTree({ files, selectedFile, onSelectFile }: FileTreeProps) {
+export default function FileTree({ files, selectedFile, onSelectFile, projectPath, onCreated }: FileTreeProps) {
+  const [creating, setCreating] = useState<'file' | 'folder' | null>(null);
+  const [newName, setNewName] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (creating) {
+      setNewName('');
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [creating]);
+
+  async function handleCreate() {
+    const name = newName.trim();
+    if (!name || !projectPath) { setCreating(null); return; }
+
+    const targetPath = `${projectPath}/${name}`;
+    if (creating === 'folder') {
+      await window.api.files.mkdir(targetPath);
+    } else {
+      await window.api.files.write(targetPath, '');
+    }
+    setCreating(null);
+    onCreated?.();
+    if (creating === 'file') onSelectFile(targetPath);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') handleCreate();
+    if (e.key === 'Escape') setCreating(null);
+  }
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <span style={styles.headerText}>Explorador</span>
         <div style={styles.actions}>
-          <button style={styles.action} title="Novo arquivo">
+          <button
+            style={styles.action}
+            title="Novo arquivo"
+            onClick={() => setCreating('file')}
+          >
             <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 1v9M1 5.5h9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
           </button>
-          <button style={styles.action} title="Nova pasta">
+          <button
+            style={styles.action}
+            title="Nova pasta"
+            onClick={() => setCreating('folder')}
+          >
             <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M.5 2C.5 1.2 1.2.5 2 .5h2.5L6 2H10c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5H2C1.2 9.5.5 8.8.5 8V2z" stroke="currentColor" strokeWidth="1.1" fill="none" /></svg>
           </button>
         </div>
       </div>
+
+      {/* Input inline de criação */}
+      {creating && (
+        <div style={styles.createRow}>
+          {creating === 'folder' ? <FolderIcon /> : <FileIcon />}
+          <input
+            ref={inputRef}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={() => setCreating(null)}
+            placeholder={creating === 'folder' ? 'nova-pasta' : 'arquivo.ts'}
+            style={styles.createInput}
+          />
+        </div>
+      )}
+
       <div style={styles.tree}>
         {files.map((file) => (
           <TreeNode
@@ -151,6 +209,24 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     cursor: 'pointer',
     color: '#c8cad4',
+  },
+  createRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '4px 14px',
+    borderBottom: '1px solid rgba(255,255,255,0.2)',
+    background: 'rgba(255,255,255,0.08)',
+    flexShrink: 0,
+  },
+  createInput: {
+    flex: 1,
+    background: 'transparent',
+    border: 'none',
+    outline: 'none',
+    fontSize: 12,
+    color: '#1a1c20',
+    fontFamily: "'JetBrains Mono', monospace",
   },
   tree: {
     flex: 1,

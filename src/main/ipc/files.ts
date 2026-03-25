@@ -179,6 +179,15 @@ export function registerFileHandlers(mainWindow: BrowserWindow): void {
     return os.homedir();
   });
 
+  ipcMain.handle('file:mkdir', async (_event, dirPath: string) => {
+    try {
+      await fs.promises.mkdir(dirPath, { recursive: true });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
+  });
+
   ipcMain.handle('file:exists', (_event, filePath: string) => {
     try {
       return { ok: true, exists: fs.existsSync(filePath) };

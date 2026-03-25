@@ -87,17 +87,20 @@ export function useGitOperations({
     }
   }
 
-  async function handleCommit(commitMsg: string, onClear: () => void) {
-    if (!projectPath || !commitMsg.trim()) return;
+  async function handleCommit(commitMsg: string, onClear: () => void): Promise<boolean> {
+    if (!projectPath || !commitMsg.trim()) return false;
     setLoading(true);
     const result = await window.api.github.commit?.(projectPath, commitMsg.trim());
     if (result?.ok) {
       onClear();
       await onRefresh?.();
+      setLoading(false);
+      return true;
     } else {
       setSyncLog(`Erro: ${result?.error || 'falha no commit'}`);
+      setLoading(false);
+      return false;
     }
-    setLoading(false);
   }
 
   async function handleCreateBranch(name: string, onDone: () => void) {

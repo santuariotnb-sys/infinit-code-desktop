@@ -228,6 +228,8 @@ export default function IDE() {
                 files={fileManager.files}
                 selectedFile={fileManager.openFile}
                 onSelectFile={fileManager.handleSelectFile}
+                projectPath={fileManager.projectPath}
+                onCreated={fileManager.reloadTree}
               />
             </ErrorBoundary>
             {/* Sidebar resize handle */}
