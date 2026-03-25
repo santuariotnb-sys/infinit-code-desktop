@@ -74,7 +74,11 @@ export default function IDE() {
     onOpenSettings: () => setShowSettings(true),
   });
 
-  // Abre preview automaticamente quando porta é detectada
+  // Abre preview automaticamente quando projeto abre ou porta é detectada
+  useEffect(() => {
+    if (fileManager.projectPath) panels.setShowPreview(true);
+  }, [fileManager.projectPath]);
+
   useEffect(() => {
     if (terminal.detectedPort) panels.setShowPreview(true);
   }, [terminal.detectedPort]);
@@ -260,6 +264,7 @@ export default function IDE() {
                     <Preview
                       terminalOutput={terminal.terminalOutput}
                       onRunDev={terminal.runDevServer}
+                      projectPath={fileManager.projectPath}
                     />
                   </ErrorBoundary>
                 </div>

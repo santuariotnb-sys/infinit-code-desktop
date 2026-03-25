@@ -1,70 +1,137 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 type ViewportSize = 'mobile' | 'tablet' | 'desktop';
 
-const VIEWPORT: Record<ViewportSize, string> = {
+const VIEWPORT_WIDTH: Record<ViewportSize, string> = {
   mobile: '375px',
   tablet: '768px',
   desktop: '100%',
 };
 
 const SERVER_REGEXES = [
-  // Genérico: localhost:PORT em qualquer formato
   /(?:localhost|127\.0\.0\.1|\[::1\]):(\d{4,5})/,
-  // Vite / Next.js / CRA: "Local: http://localhost:5173"
   /Local:\s+https?:\/\/(?:localhost|127\.0\.0\.1):(\d{4,5})/i,
-  // Astro: "http://localhost:4321/"
   /https?:\/\/localhost:(\d{4,5})/i,
-  // Fastify: "Server listening at http://..."
   /Server listening at.*?:(\d{4,5})/i,
-  // Remix / Nuxt / Analog: "started at http://localhost:PORT"
   /started at.*?:(\d{4,5})/i,
-  // ready on / ready started server on
   /ready (?:on|started server on).*?:(\d{4,5})/i,
-  // listening on port / running on port
   /(?:started|listening|running|available|serving).*?port[:\s]+(\d{4,5})/i,
-  // "on port 3000"
   /\bon port[:\s]+(\d{4,5})/i,
-  // "PORT → " ou "PORT ->"
   /:\s*(\d{4,5})\s*(?:→|->|\()/,
-  // "App running at http://..."
   /App running at.*?:(\d{4,5})/i,
-  // "Network: http://..."
   /Network:.*?:(\d{4,5})/i,
-  // Django / Flask / Uvicorn: "Uvicorn running on http://0.0.0.0:8000"
   /running on https?:\/\/[^:]+:(\d{4,5})/i,
-  // Laravel: "Development Server started: http://localhost:8000"
   /Development Server started.*?:(\d{4,5})/i,
-  // NestJS: "Nest application successfully started +Xms"
   /application successfully started.*?:(\d{4,5})/i,
-  // Generic "port XXXX" fallback
   /\bport\s+(\d{4,5})\b/i,
 ];
 
 const HMR_REGEXES = [/HMR/, /Fast Refresh/, /reloaded/i, /hot update/i];
-const ERROR_REGEXES = [/Error:/i, /EADDRINUSE/, /Cannot find module/i, /SyntaxError/i];
+const ERROR_REGEXES = [/EADDRINUSE/, /Cannot find module/i, /SyntaxError:/i];
+
+// SVG icons
+function IconMobile() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="2" width="14" height="20" rx="2" />
+      <line x1="12" y1="18" x2="12" y2="18.01" />
+    </svg>
+  );
+}
+function IconTablet() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <line x1="12" y1="18" x2="12" y2="18.01" />
+    </svg>
+  );
+}
+function IconDesktop() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  );
+}
+function IconRefresh() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+      <path d="M8 16H3v5" />
+    </svg>
+  );
+}
+function IconExternal() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
 
 interface PreviewProps {
   terminalOutput?: string;
   onRunDev?: () => void;
+  projectPath?: string | null;
 }
 
-export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps) {
+export default function Preview({ terminalOutput = '', onRunDev, projectPath }: PreviewProps) {
   const [port, setPort] = useState<number | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'live' | 'error'>('idle');
   const [iframeKey, setIframeKey] = useState(0);
   const [viewport, setViewport] = useState<ViewportSize>('desktop');
   const [hmrFlash, setHmrFlash] = useState(false);
   const [serverError, setServerError] = useState(false);
-  const [manualPort, setManualPort] = useState('');
-  const [showPortInput, setShowPortInput] = useState(false);
+  const [currentPath, setCurrentPath] = useState('/');
+  const [editingPath, setEditingPath] = useState(false);
+  const [draftPath, setDraftPath] = useState('/');
   const [iframeRetries, setIframeRetries] = useState(0);
+
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const probeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detectedPortRef = useRef<number | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const autoStartedRef = useRef(false);
 
-  // Auto-probe portas comuns se nenhuma for detectada em 8s após output
+  // Auto-start dev server quando projeto abre
+  useEffect(() => {
+    if (projectPath && onRunDev && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      setTimeout(() => onRunDev(), 800); // aguarda terminal criar
+    }
+  }, [projectPath]);
+
+  // Reset estado quando troca de projeto
+  useEffect(() => {
+    if (projectPath) {
+      autoStartedRef.current = false;
+      detectedPortRef.current = null;
+      setPort(null);
+      setStatus('idle');
+      setCurrentPath('/');
+      setDraftPath('/');
+      setServerError(false);
+      setIframeRetries(0);
+    }
+  }, [projectPath]);
+
+  // Cleanup timers
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      if (probeTimer.current) clearTimeout(probeTimer.current);
+    };
+  }, []);
+
+  // Auto-probe portas comuns se nenhuma detectada em 8s
   function scheduleProbe() {
     if (probeTimer.current) clearTimeout(probeTimer.current);
     probeTimer.current = setTimeout(async () => {
@@ -83,15 +150,14 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
             setServerError(false);
             break;
           }
-        } catch { /* porta não responde, continua */ }
+        } catch { /* porta não responde */ }
       }
     }, 8000);
   }
 
-  // Detect server from terminal output
+  // Detecção de porta via terminal output
   useEffect(() => {
     if (!terminalOutput) return;
-    // Checa as últimas 100 linhas (era 30 — aumentado para não perder logs antigos)
     const lines = terminalOutput.split('\n').slice(-100);
 
     for (const line of lines) {
@@ -113,20 +179,16 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
     }
 
     const recent = lines.join('\n');
-
-    // Agenda auto-probe se output chegou mas porta ainda não detectada
     if (!detectedPortRef.current) scheduleProbe();
 
-    // Check for errors
-    if (ERROR_REGEXES.some((r) => r.test(recent))) {
+    if (ERROR_REGEXES.some(r => r.test(recent))) {
       setServerError(true);
-    } else {
+    } else if (detectedPortRef.current) {
       setServerError(false);
     }
 
-    // HMR detection
-    if (detectedPortRef.current && HMR_REGEXES.some((r) => r.test(recent))) {
-      setIframeKey((k) => k + 1);
+    if (detectedPortRef.current && HMR_REGEXES.some(r => r.test(recent))) {
+      setIframeKey(k => k + 1);
       setHmrFlash(true);
       if (flashTimer.current) clearTimeout(flashTimer.current);
       flashTimer.current = setTimeout(() => setHmrFlash(false), 800);
@@ -138,11 +200,15 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
     setIframeRetries(0);
     setStatus('live');
     setServerError(false);
+    try {
+      const path = iframeRef.current?.contentWindow?.location?.pathname ?? '/';
+      setCurrentPath(path);
+      setDraftPath(path);
+    } catch { /* cross-origin */ }
   }
 
   function handleIframeError() {
-    // Servidor pode ainda estar subindo — tenta até 5x com backoff antes de mostrar erro
-    setIframeRetries((r) => {
+    setIframeRetries(r => {
       const next = r + 1;
       if (next >= 5) {
         setStatus('error');
@@ -151,226 +217,292 @@ export default function Preview({ terminalOutput = '', onRunDev }: PreviewProps)
       }
       const delay = Math.min(1000 * next, 4000);
       if (retryTimer.current) clearTimeout(retryTimer.current);
-      retryTimer.current = setTimeout(() => {
-        setIframeKey((k) => k + 1);
-      }, delay);
+      retryTimer.current = setTimeout(() => setIframeKey(k => k + 1), delay);
       return next;
     });
   }
 
+  function navigateTo(path: string) {
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    setCurrentPath(normalized);
+    setDraftPath(normalized);
+    setEditingPath(false);
+    setIframeKey(k => k + 1);
+  }
+
   function handleRefresh() {
     setIframeRetries(0);
-    setIframeKey((k) => k + 1);
+    setIframeKey(k => k + 1);
   }
 
-  useEffect(() => {
-    return () => {
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-      if (retryTimer.current) clearTimeout(retryTimer.current);
-      if (probeTimer.current) clearTimeout(probeTimer.current);
-    };
-  }, []);
-
-  function openInBrowser() {
-    if (port) window.api.shell.openExternal(`http://localhost:${port}`);
+  function openExternal() {
+    if (port) window.api.shell.openExternal(`http://localhost:${port}${currentPath}`);
   }
 
-  const setViewportSize = useCallback((v: ViewportSize) => setViewport(v), []);
+  const isLive = status === 'live';
+  const isConnecting = status === 'loading';
+  const dotColor = !port ? '#333' : isLive ? '#22c55e' : isConnecting ? '#f59e0b' : '#ef4444';
+  const src = port ? `http://localhost:${port}${currentPath}` : '';
 
-  function handleManualPort() {
-    const p = parseInt(manualPort, 10);
-    if (p >= 1024 && p <= 65535) {
-      detectedPortRef.current = p;
-      if (probeTimer.current) clearTimeout(probeTimer.current);
-      setPort(p);
-      setStatus('loading');
-      setServerError(false);
-      setIframeRetries(0);
-      setShowPortInput(false);
-      setManualPort('');
-    }
-  }
+  return (
+    <div style={s.root}>
+      {/* ── Browser toolbar ── */}
+      <div style={{ ...s.toolbar, borderBottomColor: hmrFlash ? '#22c55e' : '#1e1e1e' }}>
 
-  if (status === 'idle' || !port) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.idleState}>
-          <div style={styles.idleIcon}>⬡</div>
-          <p style={styles.idleTitle}>Preview ao Vivo</p>
-          <p style={styles.idleText}>
-            Aparece automaticamente quando o servidor iniciar
+        {/* Status dot */}
+        <div style={{ ...s.dot, background: dotColor }} title={!port ? 'Aguardando servidor' : status} />
+
+        {/* Address bar */}
+        <div
+          style={{ ...s.addressBar, borderColor: editingPath ? 'rgba(255,255,255,0.15)' : 'transparent' }}
+          onClick={() => { if (!editingPath) { setEditingPath(true); setDraftPath(currentPath); } }}
+        >
+          {editingPath ? (
+            <input
+              autoFocus
+              style={s.addressInput}
+              value={draftPath}
+              onChange={e => setDraftPath(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') navigateTo(draftPath);
+                if (e.key === 'Escape') setEditingPath(false);
+              }}
+              onBlur={() => setEditingPath(false)}
+            />
+          ) : port ? (
+            <span style={s.addressText}>
+              <span style={s.addressHost}>localhost:{port}</span>
+              <span style={s.addressPath}>{currentPath}</span>
+            </span>
+          ) : (
+            <span style={s.addressPlaceholder}>Aguardando servidor…</span>
+          )}
+        </div>
+
+        {/* Ações */}
+        <button style={{ ...s.iconBtn, opacity: port ? 0.7 : 0.25 }} onClick={openExternal} disabled={!port} title="Abrir no browser">
+          <IconExternal />
+        </button>
+        <button style={{ ...s.iconBtn, opacity: port ? 0.7 : 0.25 }} onClick={handleRefresh} disabled={!port} title="Recarregar">
+          <IconRefresh />
+        </button>
+
+        <div style={s.sep} />
+
+        {/* Viewport */}
+        {(['mobile', 'tablet', 'desktop'] as ViewportSize[]).map(v => (
+          <button
+            key={v}
+            style={{ ...s.vpBtn, color: viewport === v ? '#22c55e' : '#555', background: viewport === v ? 'rgba(34,197,94,0.08)' : 'transparent' }}
+            onClick={() => setViewport(v)}
+            title={`${v} — ${VIEWPORT_WIDTH[v]}`}
+          >
+            {v === 'mobile' ? <IconMobile /> : v === 'tablet' ? <IconTablet /> : <IconDesktop />}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Error banner ── */}
+      {serverError && (
+        <div style={s.errorBanner}>⚠ Erro no servidor — ver terminal</div>
+      )}
+
+      {/* ── Content ── */}
+      {!port ? (
+        <div style={s.idle}>
+          <div style={s.idleIcon}>
+            <IconDesktop />
+          </div>
+          <p style={s.idleTitle}>Preview ao Vivo</p>
+          <p style={s.idleSubtitle}>
+            {projectPath
+              ? 'Iniciando servidor de desenvolvimento…'
+              : 'Abra um projeto para ver o preview'}
           </p>
           {onRunDev && (
-            <button style={styles.runDevBtn} onClick={onRunDev}>
+            <button style={s.runBtn} onClick={onRunDev}>
               ▶ npm run dev
             </button>
           )}
-          {showPortInput ? (
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <input
-                autoFocus
-                type="number"
-                placeholder="3000"
-                value={manualPort}
-                onChange={(e) => setManualPort(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleManualPort()}
-                style={styles.portInput}
-              />
-              <button style={styles.runDevBtn} onClick={handleManualPort}>→</button>
+        </div>
+      ) : (
+        <div style={s.content}>
+          {status === 'loading' && (
+            <div style={s.skeleton}>
+              <div style={s.skBar} />
+              <div style={{ ...s.skBar, width: '65%', marginTop: 10 }} />
+              <div style={{ ...s.skBar, width: '80%', marginTop: 8 }} />
             </div>
-          ) : (
-            <button style={{ ...styles.runDevBtn, marginTop: 4, opacity: 0.5, fontSize: 11 }} onClick={() => setShowPortInput(true)}>
-              porta manual
-            </button>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={styles.container}>
-      {/* Status bar */}
-      <div style={{ ...styles.statusBar, borderBottom: `1px solid ${hmrFlash ? '#00ff88' : '#2a2a2a'}`, transition: 'border-color 0.3s' }}>
-        <span style={{ ...styles.liveDot, background: status === 'live' ? '#00ff88' : '#ffaa00' }} />
-        <span style={styles.liveLabel}>{status === 'live' ? 'LIVE' : 'CONNECTING'}</span>
-        <span
-          style={{ ...styles.portLabel, cursor: 'pointer' }}
-          title="Clique para alterar a porta"
-          onClick={() => setShowPortInput((v) => !v)}
-        >
-          localhost:{port}
-        </span>
-        <div style={styles.viewportBtns}>
-          {(['mobile', 'tablet', 'desktop'] as ViewportSize[]).map((v) => (
-            <button
-              key={v}
-              style={{ ...styles.vpBtn, ...(viewport === v ? styles.vpBtnActive : {}) }}
-              onClick={() => setViewportSize(v)}
-              title={`${v} (${VIEWPORT[v]})`}
-            >
-              {v === 'mobile' ? '📱' : v === 'tablet' ? '⬜' : '🖥'}
-            </button>
-          ))}
-        </div>
-        <button style={styles.iconBtn} onClick={handleRefresh} title="Atualizar">⟳</button>
-        <button style={styles.iconBtn} onClick={openInBrowser} title="Abrir no browser">↗</button>
-      </div>
-
-      {/* Port override inline */}
-      {showPortInput && (
-        <div style={{ display: 'flex', gap: 6, padding: '5px 10px', background: '#111', borderBottom: '1px solid #2a2a2a', flexShrink: 0 }}>
-          <input
-            autoFocus
-            type="number"
-            placeholder="porta (ex: 3001)"
-            value={manualPort}
-            onChange={(e) => setManualPort(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleManualPort(); if (e.key === 'Escape') setShowPortInput(false); }}
-            style={styles.portInput}
-          />
-          <button style={{ ...styles.iconBtn, color: '#00ff88' }} onClick={handleManualPort}>→</button>
+          <div style={{ ...s.iframeWrap, display: status === 'loading' ? 'none' : 'flex', justifyContent: 'center' }}>
+            <iframe
+              ref={iframeRef}
+              key={iframeKey}
+              src={src}
+              style={{ ...s.iframe, width: VIEWPORT_WIDTH[viewport] }}
+              title="Preview"
+              onLoad={handleLoad}
+              onError={handleIframeError}
+            />
+          </div>
         </div>
       )}
-
-      {/* Error banner */}
-      {serverError && (
-        <div style={styles.errorBanner}>
-          ⚠ Erro no servidor — ver terminal
-        </div>
-      )}
-
-      {/* Loading skeleton */}
-      {status === 'loading' && (
-        <div style={styles.skeleton}>
-          <div style={styles.skeletonBar} />
-          <div style={{ ...styles.skeletonBar, width: '60%', marginTop: 12 }} />
-          <div style={{ ...styles.skeletonBar, width: '80%', marginTop: 8 }} />
-        </div>
-      )}
-
-      {/* iframe wrapper for viewport sizing */}
-      <div style={{ ...styles.iframeWrapper, display: status === 'loading' ? 'none' : 'flex' }}>
-        <iframe
-          key={iframeKey}
-          src={`http://localhost:${port}`}
-          style={{ ...styles.iframe, width: VIEWPORT[viewport], maxWidth: '100%' }}
-          title="Preview"
-          onLoad={handleLoad}
-          onError={handleIframeError}
-        />
-      </div>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
+const s: Record<string, React.CSSProperties> = {
+  root: {
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
-    background: '#0a0a0a',
+    background: '#0d0d0d',
     overflow: 'hidden',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   },
-  statusBar: {
+  toolbar: {
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '5px 10px',
+    gap: 4,
+    padding: '0 8px',
+    height: 36,
     background: '#111',
+    borderBottom: '1px solid #1e1e1e',
     flexShrink: 0,
-    fontSize: '11px',
+    transition: 'border-color 0.3s',
   },
-  liveDot: {
+  dot: {
     width: 7,
     height: 7,
     borderRadius: '50%',
     flexShrink: 0,
+    transition: 'background 0.3s',
   },
-  liveLabel: {
-    color: '#00ff88',
-    fontWeight: 700,
-    fontSize: '10px',
-    letterSpacing: '0.05em',
-  },
-  portLabel: {
-    color: '#666',
-    fontFamily: 'monospace',
+  addressBar: {
     flex: 1,
-  },
-  viewportBtns: {
     display: 'flex',
-    gap: '2px',
+    alignItems: 'center',
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid transparent',
+    borderRadius: 6,
+    padding: '0 8px',
+    height: 24,
+    cursor: 'text',
+    transition: 'border-color 0.15s',
+    overflow: 'hidden',
   },
-  vpBtn: {
+  addressInput: {
+    flex: 1,
     background: 'transparent',
     border: 'none',
-    cursor: 'pointer',
-    fontSize: '13px',
-    padding: '2px 4px',
-    borderRadius: '3px',
-    opacity: 0.4,
+    outline: 'none',
+    color: '#ccc',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    width: '100%',
   },
-  vpBtnActive: {
-    opacity: 1,
-    background: 'rgba(0,255,136,0.1)',
+  addressText: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 0,
+    fontSize: 11,
+    fontFamily: 'monospace',
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+  },
+  addressHost: {
+    color: '#444',
+  },
+  addressPath: {
+    color: '#aaa',
+  },
+  addressPlaceholder: {
+    color: '#333',
+    fontSize: 11,
   },
   iconBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     background: 'none',
     border: 'none',
-    color: '#666',
+    color: '#888',
     cursor: 'pointer',
-    fontSize: '14px',
-    padding: '2px 5px',
-    borderRadius: '3px',
+    padding: '4px 5px',
+    borderRadius: 4,
+    transition: 'color 0.15s, background 0.15s',
+    flexShrink: 0,
+  },
+  sep: {
+    width: 1,
+    height: 16,
+    background: '#222',
+    flexShrink: 0,
+    margin: '0 2px',
+  },
+  vpBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '4px 5px',
+    borderRadius: 4,
+    transition: 'color 0.15s, background 0.15s',
+    flexShrink: 0,
   },
   errorBanner: {
-    background: 'rgba(255,60,60,0.15)',
-    borderBottom: '1px solid rgba(255,60,60,0.3)',
-    color: '#ff6060',
-    fontSize: '11px',
-    padding: '5px 12px',
+    background: 'rgba(239,68,68,0.12)',
+    borderBottom: '1px solid rgba(239,68,68,0.25)',
+    color: '#f87171',
+    fontSize: 11,
+    padding: '4px 12px',
     flexShrink: 0,
+  },
+  idle: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    padding: 32,
+  },
+  idleIcon: {
+    color: '#222',
+    fontSize: 48,
+    marginBottom: 4,
+  },
+  idleTitle: {
+    color: '#444',
+    fontSize: 13,
+    fontWeight: 600,
+    margin: 0,
+  },
+  idleSubtitle: {
+    color: '#2a2a2a',
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 1.5,
+    maxWidth: 220,
+    margin: 0,
+  },
+  runBtn: {
+    marginTop: 6,
+    background: 'transparent',
+    border: '1px solid #222',
+    color: '#22c55e',
+    padding: '6px 14px',
+    borderRadius: 6,
+    fontSize: 11,
+    cursor: 'pointer',
+    fontFamily: 'monospace',
+  },
+  content: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
   },
   skeleton: {
     flex: 1,
@@ -378,72 +510,24 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
   },
-  skeletonBar: {
-    height: 14,
+  skBar: {
+    height: 12,
     borderRadius: 6,
-    background: 'linear-gradient(90deg, #1a1a1a 25%, #222 50%, #1a1a1a 75%)',
+    background: 'linear-gradient(90deg, #161616 25%, #1e1e1e 50%, #161616 75%)',
     backgroundSize: '200% 100%',
     animation: 'shimmer 1.4s infinite',
     width: '100%',
   },
-  iframeWrapper: {
+  iframeWrap: {
     flex: 1,
     overflow: 'auto',
-    justifyContent: 'center',
-    background: '#0a0a0a',
+    background: '#0d0d0d',
   },
   iframe: {
     height: '100%',
     border: 'none',
     background: '#fff',
     flexShrink: 0,
-  },
-  idleState: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: 24,
-  },
-  idleIcon: {
-    fontSize: 48,
-    color: '#2a2a2a',
-    lineHeight: 1,
-  },
-  idleTitle: {
-    color: '#555',
-    fontSize: 14,
-    fontWeight: 600,
-  },
-  idleText: {
-    color: '#333',
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 1.5,
-    maxWidth: 200,
-  },
-  portInput: {
-    background: '#0d0d0d',
-    border: '1px solid #2a2a2a',
-    borderRadius: 4,
-    color: '#fff',
-    fontSize: 11,
-    padding: '3px 8px',
-    fontFamily: 'monospace',
-    width: 100,
-    outline: 'none',
-  },
-  runDevBtn: {
-    marginTop: 8,
-    background: 'transparent',
-    border: '1px solid #2a2a2a',
-    color: '#00ff88',
-    padding: '7px 16px',
-    borderRadius: 6,
-    fontSize: 12,
-    cursor: 'pointer',
-    fontFamily: 'monospace',
+    minHeight: '100%',
   },
 };
