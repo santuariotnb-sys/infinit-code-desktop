@@ -333,7 +333,7 @@ Ao revisar e escrever código:
       '--output-format', 'stream-json',
       '--verbose',
       '--dangerously-skip-permissions',
-      '--model', payload.model ?? 'claude-sonnet-4-5-20251001',
+      '--model', payload.model ?? 'claude-sonnet-4-6',
       '--max-turns', '15',
     ];
     if (existingSession) args.push('--resume', existingSession);

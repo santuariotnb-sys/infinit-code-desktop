@@ -150,7 +150,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
 
     try {
       const MODEL_IDS = {
-        sonnet: 'claude-sonnet-4-5-20251001',
+        sonnet: 'claude-sonnet-4-6',
         haiku:  'claude-haiku-4-5-20251001',
         opus:   'claude-opus-4-6',
       };
@@ -235,7 +235,11 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         )}
         {/* Seletor de modelo */}
         <div style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.06)', borderRadius: 5, padding: 2 }}>
-          {(['haiku', 'sonnet', 'opus'] as const).map((m) => (
+          {([
+            { key: 'haiku',  label: 'Haiku 4.5',   title: '⚡ Mais rápido · Haiku 4.5' },
+            { key: 'sonnet', label: 'Sonnet 4.6',  title: '⚖ Tarefas do dia a dia · Sonnet 4.6' },
+            { key: 'opus',   label: 'Opus 4.6',    title: '🎯 Máximo · Opus 4.6 · 1M contexto' },
+          ] as const).map(({ key: m, label, title }) => (
             <button
               key={m}
               onClick={() => setSelectedModel(m)}
@@ -246,8 +250,8 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
                 borderRadius: 3, padding: '1px 5px', fontSize: 9,
                 cursor: 'pointer', fontFamily: 'monospace', transition: 'all .12s',
               }}
-              title={{ haiku: '⚡ Rápido (Haiku)', sonnet: '⚖ Balanceado (Sonnet)', opus: '🎯 Máximo (Opus)' }[m]}
-            >{m}</button>
+              title={title}
+            >{label}</button>
           ))}
         </div>
         <button
