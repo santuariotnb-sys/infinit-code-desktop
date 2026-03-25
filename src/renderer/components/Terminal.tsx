@@ -56,10 +56,11 @@ export default function Terminal() {
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Start pty process, then fit
+    // Cria PTY apenas se ainda não existe (evita matar processo ao remontar)
     window.api.terminal.create().then(() => {
       setTimeout(() => { fitAddon.fit(); }, 50);
     });
+    // Nota: terminal.create no main já verifica se PTY existe e não recria.
 
     // Send user input to pty
     term.onData((data) => {
@@ -89,7 +90,8 @@ export default function Terminal() {
     return () => {
       cleanup();
       observer.disconnect();
-      window.api.terminal.kill();
+      // NÃO mata o PTY aqui — o processo continua rodando em background.
+      // O PTY só é morto quando a janela fecha (main/ipc/terminal.ts cuida disso).
       term.dispose();
       termRef.current = null;
     };

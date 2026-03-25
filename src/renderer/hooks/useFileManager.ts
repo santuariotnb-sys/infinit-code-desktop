@@ -28,7 +28,9 @@ export function useFileManager() {
   useEffect(() => {
     if (!projectPath) return;
     loadFiles(projectPath);
-    window.api.terminal.create(projectPath);
+    // Terminal já é criado pelo componente Terminal.tsx no mount.
+    // Apenas muda o cwd do PTY existente via cd, sem matar o processo.
+    window.api.terminal.write(`cd "${projectPath}"\r`);
     window.api.files.watch(projectPath);
     const cleanupListener = window.api.files.onChanged(() => loadFiles(projectPath));
     return () => {

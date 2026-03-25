@@ -8,9 +8,18 @@ let ptyProcess: pty.IPty | null = null;
 export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('terminal:create', (_event, cwd?: string) => {
     try {
+      // Idempotente: se PTY já existe e não foi solicitado novo cwd, reconecta sem matar.
+      // Isso evita o bug de terminal reiniciando ao abrir arquivo ou preview.
+      if (ptyProcess && !cwd) {
+        return { ok: true, cols: 80, rows: 24, reused: true };
+      }
+
+      // Só recria se forçado com novo cwd (ex: mudança de projeto)
       if (ptyProcess) {
+        const pid = ptyProcess.pid;
         ptyProcess.kill();
         ptyProcess = null;
+        if (pid) treeKill(pid, 'SIGTERM');
       }
 
       const isWin = process.platform === 'win32';
