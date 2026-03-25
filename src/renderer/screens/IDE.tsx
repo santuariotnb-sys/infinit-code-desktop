@@ -98,8 +98,11 @@ export default function IDE() {
     if (fileManager.projectPath) panels.setShowPreview(true);
   }, [fileManager.projectPath]);
 
-  // runDevServer com package manager correto — usa ghost terminal (cwd obrigatório)
-  const runDev = () => terminal.runDevServer(fileManager.pkgManager, fileManager.projectPath ?? undefined);
+  // runDevServer com package manager correto — memoizado para não disparar effects no Preview
+  const runDev = useCallback(
+    () => terminal.runDevServer(fileManager.pkgManager, fileManager.projectPath ?? undefined),
+    [terminal.runDevServer, fileManager.pkgManager, fileManager.projectPath],
+  );
 
   useEffect(() => {
     if (terminal.detectedPort) panels.setShowPreview(true);
@@ -299,6 +302,7 @@ export default function IDE() {
                       pkgManager={fileManager.pkgManager}
                       refreshTrigger={previewRefreshTrigger}
                       onPathChange={handlePreviewPathChange}
+                      serverPort={terminal.detectedPort}
                     />
                   </ErrorBoundary>
                 </div>

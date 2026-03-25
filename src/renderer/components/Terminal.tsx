@@ -138,6 +138,7 @@ export default function Terminal() {
       style={{ width: '100%', height: '100%', position: 'relative' }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
+      onMouseDown={() => termRef.current?.focus()}
     >
       <div
         ref={containerRef}

@@ -109,9 +109,11 @@ interface PreviewProps {
   pkgManager?: string;
   refreshTrigger?: number; // incrementar para forçar reload (ex: pós-git-sync)
   onPathChange?: (path: string, port: number | null) => void;
+  /** Porta já detectada pelo terminal ghost — se definida, servidor já está rodando */
+  serverPort?: number | null;
 }
 
-export default function Preview({ terminalOutput = '', onRunDev, projectPath, hasNodeModules, pkgManager = 'npm', refreshTrigger, onPathChange }: PreviewProps) {
+export default function Preview({ terminalOutput = '', onRunDev, projectPath, hasNodeModules, pkgManager = 'npm', refreshTrigger, onPathChange, serverPort }: PreviewProps) {
   const [port, setPort] = useState<number | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'live' | 'error'>('idle');
   const [iframeKey, setIframeKey] = useState(0);
@@ -148,6 +150,10 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   // Ref estável para onPathChange — evita loop infinito com função inline
   const onPathChangeRef = useRef(onPathChange);
   useEffect(() => { onPathChangeRef.current = onPathChange; });
+
+  // Ref estável para onRunDev — evita disparar effect de auto-start quando IDE re-renderiza
+  const onRunDevRef = useRef(onRunDev);
+  useEffect(() => { onRunDevRef.current = onRunDev; });
 
   // Notifica IDE quando rota ou porta muda (sem incluir a callback na dep array)
   useEffect(() => {
