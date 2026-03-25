@@ -44,29 +44,47 @@ export function useGitOperations({
     if (!projectPath || !branch) return;
     setLoading(true);
     setSyncLog('');
-    await window.api.github.pull(projectPath, branch);
-    await onRefresh?.();
-    onSyncDone?.();
-    setLoading(false);
+    try {
+      const result = await window.api.github.pull(projectPath, branch);
+      if (!result?.ok) throw new Error('Pull falhou');
+      await onRefresh?.();
+      onSyncDone?.();
+    } catch (err) {
+      setSyncLog(`⚠ Erro no pull: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handlePush() {
     if (!projectPath || !branch) return;
     setLoading(true);
     setSyncLog('');
-    await window.api.github.push(projectPath, branch);
-    onSyncDone?.();
-    setLoading(false);
+    try {
+      const result = await window.api.github.push(projectPath, branch);
+      if (!result?.ok) throw new Error('Push falhou');
+      onSyncDone?.();
+    } catch (err) {
+      setSyncLog(`⚠ Erro no push: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSync() {
     if (!projectPath || !branch) return;
     setLoading(true);
     setSyncLog('');
-    await window.api.github.sync(projectPath, branch);
-    await onRefresh?.();
-    onSyncDone?.();
-    setLoading(false);
+    try {
+      const result = await window.api.github.sync(projectPath, branch);
+      if (!result?.pushed && !result?.conflicts) throw new Error('Sync não completou');
+      await onRefresh?.();
+      onSyncDone?.();
+    } catch (err) {
+      setSyncLog(`⚠ Erro no sync: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleCommit(commitMsg: string, onClear: () => void) {
@@ -84,7 +102,11 @@ export function useGitOperations({
 
   async function handleCreateBranch(name: string, onDone: () => void) {
     if (!projectPath || !name.trim()) return;
-    await window.api.github.createBranch(projectPath, name.trim());
+    const result = await window.api.github.createBranch(projectPath, name.trim());
+    if (!result?.ok) {
+      setSyncLog(`⚠ Erro ao criar branch: ${result?.error || 'falha desconhecida'}`);
+      return;
+    }
     onDone();
     await onRefresh?.();
   }
@@ -93,11 +115,16 @@ export function useGitOperations({
     if (!projectPath || !branch) return;
     setLoading(true);
     setSyncLog('');
-    await window.api.github.sync(projectPath, branch);
-    await onRefresh?.();
-    onSyncDone?.();
-    await window.api.shell.openExternal('https://lovable.dev');
-    setLoading(false);
+    try {
+      await window.api.github.sync(projectPath, branch);
+      await onRefresh?.();
+      onSyncDone?.();
+      await window.api.shell.openExternal('https://lovable.dev');
+    } catch (err) {
+      setSyncLog(`⚠ Erro no sync: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return {

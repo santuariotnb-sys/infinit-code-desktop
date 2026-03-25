@@ -7,6 +7,8 @@ export interface ChatContext {
   projectContext?: string;
   relevantFiles?: Array<{ path: string; content: string }>;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  previewPage?: string;   // rota visível no preview, ex: "/checkout"
+  previewPort?: number | null; // porta do servidor, ex: 3000
 }
 
 // ── Instrução de sistema ──────────────────────────────────────────────────────
@@ -22,12 +24,18 @@ O contexto do projeto abaixo contém TUDO que você precisa saber:
 - Rotas com mapeamento rota → componente
 - Variáveis de ambiente disponíveis
 
+REGRA PRINCIPAL — PÁGINA DO PREVIEW:
+O usuário tem um preview ao vivo do projeto. A página visível no preview é a PÁGINA-ALVO PADRÃO.
+- Todo pedido sem página explicitamente especificada deve ser interpretado como referente à página atual do preview.
+- Só atue em uma página diferente se o usuário nomear explicitamente outra rota ou arquivo.
+- Exemplos: "adiciona um botão verde" → edita o componente da página do preview. "muda o título" → título da página do preview. "cria uma nova página /sobre" → exceção, aqui sim é uma página diferente.
+
 COMPORTAMENTO OBRIGATÓRIO:
 1. ANTES de qualquer ação, responda em 1-2 linhas: "Entendi: [o que vai fazer] → [arquivo(s) exato(s)]"
-2. Use o contexto para identificar o arquivo correto pelo nome informal:
-   - "página de checkout" → busca em Páginas e Rotas pelo path /checkout
+2. Use o contexto para identificar o arquivo correto:
+   - Se a página do preview for /checkout → use o componente mapeado para /checkout
+   - Se a página do preview for / → use a página inicial
    - "tabela de pedidos" → busca em Banco de dados
-   - "botão de login" → busca em Componentes ou na página de auth
    - "edge function de pagamento" → busca em Edge Functions
 3. Leia o arquivo COMPLETO antes de editar — nunca trabalhe com trechos
 4. Execute diretamente sem pedir confirmações técnicas desnecessárias
@@ -101,12 +109,22 @@ export function buildPrompt(message: string, ctx: ChatContext): string {
   // 1. Instrução do sistema
   parts.push(SYSTEM_INSTRUCTION);
 
-  // 2. Contexto completo do projeto (package.json, tree, rotas, env)
+  // 2. Página visível no preview — ALVO PADRÃO para todos os pedidos
+  if (ctx.previewPage) {
+    const portInfo = ctx.previewPort ? ` (localhost:${ctx.previewPort})` : '';
+    parts.push(`<preview_page>
+PÁGINA ATUAL NO PREVIEW: ${ctx.previewPage}${portInfo}
+Esta é a página-alvo padrão. Pedidos sem página explícita se referem a ESTA página.
+Use o mapeamento rota→componente do project_context para identificar o arquivo correto.
+</preview_page>`);
+  }
+
+  // 3. Contexto completo do projeto (package.json, tree, rotas, env)
   if (ctx.projectContext) {
     parts.push(`<project_context>\n${ctx.projectContext}\n</project_context>`);
   }
 
-  // 3. Arquivo ativo — conteúdo COMPLETO (não trecho)
+  // 4. Arquivo ativo — conteúdo COMPLETO (não trecho)
   if (ctx.activeFile && ctx.activeFileContent) {
     parts.push(`<active_file path="${ctx.activeFile}">\n${ctx.activeFileContent}\n</active_file>`);
   }

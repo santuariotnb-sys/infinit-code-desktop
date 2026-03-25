@@ -20,6 +20,8 @@ export interface IntelliChatProps {
   projectContext?: string;
   isIndexing?: boolean;
   onReindex?: () => void;
+  previewPage?: string;
+  previewPort?: number | null;
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -39,7 +41,7 @@ function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? `🔧 ${name}`;
 }
 
-export default function IntelliChat({ mode = 'project', projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile, onStreamingChange, projectContext, isIndexing, onReindex }: IntelliChatProps) {
+export default function IntelliChat({ mode = 'project', projectPath, activeFile, onTerminalInject, terminalOutput, onOpenFile, onStreamingChange, projectContext, isIndexing, onReindex, previewPage, previewPort }: IntelliChatProps) {
   const [input, setInput] = useState('');
   const [actionCards, setActionCards] = useState<ActionCard[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -114,6 +116,8 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
       projectContext: isResearch ? undefined : projectContext,
       relevantFiles: isResearch ? undefined : relevantFiles,
       history: chat.messages.filter((m) => m.role !== 'system').slice(-6).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      previewPage: isResearch ? undefined : previewPage,
+      previewPort: isResearch ? undefined : previewPort,
     };
 
     let prompt = buildPrompt(msg, ctx);

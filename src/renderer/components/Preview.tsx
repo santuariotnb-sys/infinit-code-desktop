@@ -125,9 +125,10 @@ interface PreviewProps {
   hasNodeModules?: boolean | null;
   pkgManager?: string;
   refreshTrigger?: number; // incrementar para forçar reload (ex: pós-git-sync)
+  onPathChange?: (path: string, port: number | null) => void;
 }
 
-export default function Preview({ terminalOutput = '', onRunDev, projectPath, hasNodeModules, pkgManager = 'npm', refreshTrigger }: PreviewProps) {
+export default function Preview({ terminalOutput = '', onRunDev, projectPath, hasNodeModules, pkgManager = 'npm', refreshTrigger, onPathChange }: PreviewProps) {
   const [port, setPort] = useState<number | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'live' | 'error'>('idle');
   const [iframeKey, setIframeKey] = useState(0);
@@ -147,6 +148,11 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const probeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Notifica IDE quando a rota visível no preview muda
+  useEffect(() => {
+    onPathChange?.(currentPath, port);
+  }, [currentPath, port, onPathChange]);
   const detectedPortRef = useRef<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // Rastreia por path (não boolean) para evitar race condition entre effects

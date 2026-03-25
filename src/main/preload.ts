@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('api', {
     ask: (payload: { prompt: string; cwd: string; sessionId?: string }) =>
       ipcRenderer.invoke('claude:ask', payload),
     clearSession: () => ipcRenderer.invoke('claude:clear-session'),
+    cancel: () => ipcRenderer.invoke('claude:cancel'),
     status: () => ipcRenderer.invoke('claude:status'),
     saveApiKey: (key: string) => ipcRenderer.invoke('claude:save-api-key', key),
     getApiKey: () => ipcRenderer.invoke('claude:get-api-key'),

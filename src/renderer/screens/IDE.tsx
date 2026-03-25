@@ -59,6 +59,8 @@ export default function IDE() {
 
   // Track Claude streaming status for toolbar indicator
   const [isChatStreaming, setIsChatStreaming] = useState(false);
+  // Página atualmente visível no preview (rota + porta)
+  const [previewPage, setPreviewPage] = useState<{ path: string; port: number | null }>({ path: '/', port: null });
   // Refresh do preview após git sync/pull
   const [previewRefreshTrigger, setPreviewRefreshTrigger] = useState(0);
   const triggerPreviewRefresh = () => setPreviewRefreshTrigger(n => n + 1);
@@ -281,6 +283,7 @@ export default function IDE() {
                       hasNodeModules={fileManager.hasNodeModules}
                       pkgManager={fileManager.pkgManager}
                       refreshTrigger={previewRefreshTrigger}
+                      onPathChange={(path, port) => setPreviewPage({ path, port })}
                     />
                   </ErrorBoundary>
                 </div>
@@ -356,6 +359,8 @@ export default function IDE() {
                     projectContext={projectContext}
                     isIndexing={isIndexing}
                     onReindex={reindex}
+                    previewPage={previewPage.path}
+                    previewPort={previewPage.port}
                   />
                 </ErrorBoundary>
               )}

@@ -48,6 +48,7 @@ interface ElectronAPI {
     ask?: (payload: { prompt: string; cwd: string; sessionId?: string }) =>
       Promise<{ ok: boolean; sessionId: string | null; cost_usd: number; chunks: object[] }>;
     clearSession?: () => Promise<{ ok: boolean }>;
+    cancel?: () => Promise<{ ok: boolean }>;
     saveApiKey?: (key: string) => Promise<{ ok: boolean; error?: string }>;
     getApiKey?: () => Promise<{ configured: boolean; masked: string }>;
     onChunk?: (cb: (data: { text: string }) => void) => () => void;

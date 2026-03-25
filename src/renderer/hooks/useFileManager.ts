@@ -28,6 +28,12 @@ export function useFileManager() {
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [pkgManager, setPkgManager] = useState<PkgManager>('npm');
   const [hasNodeModules, setHasNodeModules] = useState<boolean | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  function showError(msg: string) {
+    setFileError(msg);
+    setTimeout(() => setFileError(null), 4000);
+  }
 
   // Ref para debounce do auto-save (1.5s após última digitação)
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,7 +95,7 @@ export function useFileManager() {
       setIsModified(false);
       setOpenTabs((prev) => prev.includes(filePath) ? prev : [...prev, filePath]);
     } else {
-      console.error('[useFileManager] read falhou:', result?.error);
+      showError(`Não foi possível abrir: ${result?.error || 'erro desconhecido'}`);
     }
   }
 
@@ -120,7 +126,7 @@ export function useFileManager() {
         setIsModified(false);
         isModifiedRef.current = false;
       } else {
-        console.error('[useFileManager] write falhou:', result?.error);
+        showError(`Erro ao salvar: ${result?.error || 'erro desconhecido'}`);
       }
     }
   }
@@ -156,6 +162,7 @@ export function useFileManager() {
     openTabs,
     pkgManager,
     hasNodeModules,
+    fileError,
     openProject,
     handleOpenFolder,
     handleSelectFile,
