@@ -13,6 +13,7 @@ interface ElectronAPI {
     kill: () => Promise<void>;
     onData: (cb: (data: string) => void) => () => void;
     onInject?: (cb: (text: string) => void) => () => void;
+    onExit?: (cb: () => void) => () => void;
   };
   files: {
     read: (filePath: string) => Promise<{ ok: boolean; data?: string; error?: string }>;

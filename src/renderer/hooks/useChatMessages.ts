@@ -39,9 +39,9 @@ export function useChatMessages() {
     setStreamingText(streamingRef.current);
   }, []);
 
-  const finishStreaming = useCallback((cost?: number, newSessionId?: string) => {
-    const finalText = streamingRef.current || 'Pronto.';
-    addAssistantMessage(finalText);
+  const finishStreaming = useCallback((cost?: number, newSessionId?: string, silent = false) => {
+    const finalText = streamingRef.current;
+    if (finalText && !silent) addAssistantMessage(finalText);
     streamingRef.current = '';
     setStreamingText('');
     setClaudeStatus('ready');

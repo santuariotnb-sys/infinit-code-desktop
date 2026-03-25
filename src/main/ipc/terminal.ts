@@ -47,6 +47,10 @@ export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
 
       ptyProcess.onExit(() => {
         ptyProcess = null;
+        // Notifica renderer para auto-restart do terminal
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('terminal:exit');
+        }
       });
 
       return { ok: true, cols: 80, rows: 24 };

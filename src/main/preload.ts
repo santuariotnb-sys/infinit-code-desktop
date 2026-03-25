@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('terminal:inject', handler);
       return () => ipcRenderer.removeListener('terminal:inject', handler);
     },
+    onExit: (cb: () => void) => {
+      const handler = () => cb();
+      ipcRenderer.on('terminal:exit', handler);
+      return () => ipcRenderer.removeListener('terminal:exit', handler);
+    },
   },
 
   files: {

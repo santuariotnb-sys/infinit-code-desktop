@@ -56,42 +56,61 @@ export default function Terminal() {
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Cria PTY apenas se ainda não existe (evita matar processo ao remontar)
-    window.api.terminal.create().then(() => {
-      setTimeout(() => { fitAddon.fit(); }, 50);
-    });
-    // Nota: terminal.create no main já verifica se PTY existe e não recria.
+    // Cria PTY — idempotente, só cria se não existe
+    const createPty = () => {
+      window.api.terminal.create().then(() => {
+        try { fitAddon.fit(); } catch { /* ignore */ }
+      }).catch(() => {
+        // Tenta novamente após 1s se falhar
+        setTimeout(createPty, 1000);
+      });
+    };
+    createPty();
 
-    // Send user input to pty
+    // Input do usuário → PTY
     term.onData((data) => {
       window.api.terminal.write(data);
     });
 
-    // Receive pty output
-    const cleanup = window.api.terminal.onData((data) => {
+    // Saída do PTY → xterm
+    const cleanupData = window.api.terminal.onData((data) => {
       term.write(data);
     });
 
-    // Resize — guarda dimensões mínimas para não travar o pty
+    // Auto-restart quando PTY morre inesperadamente
+    const cleanupExit = window.api.terminal.onExit?.(() => {
+      if (!termRef.current) return; // componente já desmontado
+      term.write('\r\n\x1b[33m[terminal reiniciando...]\x1b[0m\r\n');
+      setTimeout(() => {
+        if (!termRef.current) return;
+        createPty();
+      }, 800);
+    }) ?? (() => {});
+
+    // Resize com debounce para não sobrecarregar o PTY
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const observer = new ResizeObserver(() => {
       if (!fitAddonRef.current || !containerRef.current) return;
       const { offsetWidth, offsetHeight } = containerRef.current;
       if (offsetWidth < 20 || offsetHeight < 20) return;
-      try {
-        fitAddonRef.current.fit();
-        const dims = fitAddonRef.current.proposeDimensions();
-        if (dims && dims.cols > 0 && dims.rows > 0) {
-          window.api.terminal.resize(dims.cols, dims.rows);
-        }
-      } catch { /* ignore resize errors */ }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        try {
+          fitAddonRef.current?.fit();
+          const dims = fitAddonRef.current?.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0) {
+            window.api.terminal.resize(dims.cols, dims.rows);
+          }
+        } catch { /* ignore */ }
+      }, 60);
     });
     observer.observe(containerRef.current);
 
     return () => {
-      cleanup();
+      cleanupData();
+      cleanupExit();
+      if (resizeTimer) clearTimeout(resizeTimer);
       observer.disconnect();
-      // NÃO mata o PTY aqui — o processo continua rodando em background.
-      // O PTY só é morto quando a janela fecha (main/ipc/terminal.ts cuida disso).
       term.dispose();
       termRef.current = null;
     };

@@ -30,6 +30,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   const chat = useChatMessages();
   const voice = useVoiceInput({ onTranscript: (text) => setInput((prev) => prev ? `${prev} ${text}` : text) });
   const files = useFileAttachments({ projectPath, activeFile, inputValue: input, onInputChange: setInput });
+  const isSendingRef = React.useRef(false); // guard contra envios simultâneos
 
   useEffect(() => { onStreamingChange?.(chat.isStreaming); }, [chat.isStreaming, onStreamingChange]);
 
@@ -50,6 +51,9 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   async function send(text?: string) {
     const msg = (text || input).trim();
     if (!msg) return;
+
+    // Guard — não envia se já está processando
+    if (isSendingRef.current) return;
 
     // Execução direta de comandos com ! (ex: !npm run dev)
     if (msg.startsWith('!')) {
@@ -86,6 +90,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     files.clearAttachments();
     setInput('');
     chat.startStreaming();
+    isSendingRef.current = true;
 
     const removeChunk = window.api.claude.onChunk?.((data) => chat.appendChunk(data.text)) ?? (() => {});
     const removeTool = window.api.claude.onTool?.(() => {}) ?? (() => {});
@@ -95,11 +100,13 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
       chat.finishStreaming(result?.cost_usd, result?.sessionId);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
-      chat.addSystemMessage(`Erro: ${message}`);
-      chat.setClaudeStatus(message.includes('não encontrado') ? 'offline' : 'ready');
+      // Sempre finaliza streaming antes de mostrar erro (evita UI travada)
+      chat.finishStreaming(undefined, undefined, true);
+      chat.addSystemMessage(`⚠ ${message}`);
     } finally {
       removeChunk();
       removeTool();
+      isSendingRef.current = false;
     }
   }
 
