@@ -23,6 +23,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   const [input, setInput] = useState('');
   const [actionCards, setActionCards] = useState<ActionCard[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showResults, setShowResults] = useState(true);
 
   const chat = useChatMessages();
   const voice = useVoiceInput({ onTranscript: (text) => setInput((prev) => prev ? `${prev} ${text}` : text) });
@@ -47,6 +48,16 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   async function send(text?: string) {
     const msg = (text || input).trim();
     if (!msg) return;
+
+    // Execução direta de comandos com ! (ex: !npm run dev)
+    if (msg.startsWith('!')) {
+      const cmd = msg.slice(1).trim();
+      chat.addUserMessage(msg);
+      setInput('');
+      onTerminalInject(cmd + '\r');
+      if (showResults) chat.addSystemMessage(`→ Executando: ${cmd}`);
+      return;
+    }
 
     // Verify Claude is installed before sending
     try {
@@ -153,6 +164,11 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
           )}
         </div>
         <span style={styles.projectBadge}>{projectPath ? basename(projectPath) : 'sem projeto'}</span>
+        <button
+          onClick={() => setShowResults((v) => !v)}
+          style={{ ...styles.clearBtn, color: showResults ? '#00ff88' : '#444', fontSize: 11 }}
+          title={showResults ? 'Ocultar resultados' : 'Mostrar resultados'}
+        >{showResults ? '◉' : '○'}</button>
         {chat.messages.length > 0 && <button onClick={chat.clearMessages} style={styles.clearBtn} title="Nova conversa">↺</button>}
       </div>
 
@@ -179,7 +195,13 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
               </div>
             </div>
           )
-          : <ChatMessages messages={chat.messages} streamingText={chat.streamingText} actionCards={actionCards} onOpenFile={onOpenFile} onTerminalInject={onTerminalInject} />
+          : <ChatMessages
+            messages={showResults ? chat.messages : chat.messages.filter((m) => m.role !== 'assistant')}
+            streamingText={showResults ? chat.streamingText : ''}
+            actionCards={actionCards}
+            onOpenFile={onOpenFile}
+            onTerminalInject={onTerminalInject}
+          />
         }
       </div>
 

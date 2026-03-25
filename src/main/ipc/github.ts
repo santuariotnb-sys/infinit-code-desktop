@@ -14,6 +14,18 @@ function getToken(): string | null { return getSecret(GH_TOKEN_KEY); }
 function saveToken(token: string): void { setSecret(GH_TOKEN_KEY, token); }
 function deleteToken(): void { deleteSecret(GH_TOKEN_KEY); }
 
+// Escreve credenciais no git credential store para push/pull sem token
+function setupGitCredentials(token: string, username: string): void {
+  try {
+    const credPath = path.join(os.homedir(), '.git-credentials');
+    const line = `https://${username}:${token}@github.com`;
+    const existing = fs.existsSync(credPath) ? fs.readFileSync(credPath, 'utf-8') : '';
+    const filtered = existing.split('\n').filter((l) => !l.includes('github.com')).join('\n');
+    fs.writeFileSync(credPath, filtered.trim() + '\n' + line + '\n', { mode: 0o600 });
+    execSync('git config --global credential.helper store', { timeout: 5000 });
+  } catch { /* não bloqueia o fluxo */ }
+}
+
 function httpsGet(url: string, token?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -102,6 +114,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
             saveToken(data.access_token);
             const userRaw = await httpsGet('https://api.github.com/user', data.access_token);
             const user = JSON.parse(userRaw);
+            setupGitCredentials(data.access_token, user.login);
             resolve({ connected: true, user: user.login });
             return;
           }
@@ -126,6 +139,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
       const user = JSON.parse(userRaw);
       if (!user.login) return { ok: false, error: 'Token inválido' };
       saveToken(token);
+      setupGitCredentials(token, user.login);
       return { ok: true, user: user.login };
     } catch (e) {
       return { ok: false, error: String(e) };
