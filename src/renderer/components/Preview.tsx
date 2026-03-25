@@ -148,12 +148,16 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const probeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Notifica IDE quando a rota visível no preview muda
-  useEffect(() => {
-    onPathChange?.(currentPath, port);
-  }, [currentPath, port, onPathChange]);
   const detectedPortRef = useRef<number | null>(null);
+
+  // Ref estável para onPathChange — evita loop infinito com função inline
+  const onPathChangeRef = useRef(onPathChange);
+  useEffect(() => { onPathChangeRef.current = onPathChange; });
+
+  // Notifica IDE quando rota ou porta muda (sem incluir a callback na dep array)
+  useEffect(() => {
+    onPathChangeRef.current?.(currentPath, port);
+  }, [currentPath, port]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   // Rastreia por path (não boolean) para evitar race condition entre effects
   const autoStartedForRef = useRef<string | null>(null);
