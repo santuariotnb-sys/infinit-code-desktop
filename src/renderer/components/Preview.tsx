@@ -243,11 +243,12 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
 
   // Auto-start dev server quando node_modules está disponível
   useEffect(() => {
-    if (!projectPath || !onRunDev || hasNodeModules !== true) return;
+    if (!projectPath || hasNodeModules !== true) return;
     if (autoStartedForRef.current === projectPath) return;
+    if (serverPort) return; // servidor já está rodando — não reinicia
     autoStartedForRef.current = projectPath;
-    setTimeout(() => onRunDev(), 600);
-  }, [projectPath, hasNodeModules, onRunDev]);
+    setTimeout(() => onRunDevRef.current?.(), 600);
+  }, [projectPath, hasNodeModules, serverPort]); // onRunDev removido — usa ref estável
 
   // Refresh externo (ex: pós-git-sync/pull) — aguarda Vite compilar antes de recarregar
   useEffect(() => {
