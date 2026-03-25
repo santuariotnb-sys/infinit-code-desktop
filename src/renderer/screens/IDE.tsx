@@ -175,6 +175,8 @@ export default function IDE() {
               isModified={fileManager.isModified}
             />
           )}
+          {/* Editor + Preview side by side, both above Terminal */}
+          <div style={styles.editorRow}>
           <div style={styles.editorPane}>
             {fileManager.openFile ? (
               <ErrorBoundary name="Editor">
@@ -245,6 +247,26 @@ export default function IDE() {
             )}
           </div>
 
+            {panels.showPreview && (
+              <div style={{ display: 'flex', flexDirection: 'row', width: PREVIEW_WIDTH, flexShrink: 0, borderLeft: '1px solid rgba(255,255,255,0.55)', overflow: 'hidden' }}>
+                <div
+                  data-resize
+                  style={styles.resizeHandle}
+                  onMouseDown={startPreviewDrag}
+                  title="Arraste para redimensionar"
+                />
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <ErrorBoundary name="Preview">
+                    <Preview
+                      terminalOutput={terminal.terminalOutput}
+                      onRunDev={terminal.runDevServer}
+                    />
+                  </ErrorBoundary>
+                </div>
+              </div>
+            )}
+          </div>{/* end editorRow */}
+
           <div style={{ ...styles.terminalPanel, height: TERMINAL_HEIGHT }}>
             {/* Terminal vertical resize handle */}
             {terminal.isExpanded && (
@@ -269,24 +291,6 @@ export default function IDE() {
             )}
           </div>
         </div>
-
-        {panels.showPreview && (
-          <div style={{ ...styles.panel, width: PREVIEW_WIDTH, display: 'flex', flexDirection: 'row' }}>
-            <div
-              style={styles.resizeHandle}
-              onMouseDown={startPreviewDrag}
-              title="Arraste para redimensionar"
-            />
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              <ErrorBoundary name="Preview">
-                <Preview
-                  terminalOutput={terminal.terminalOutput}
-                  onRunDev={terminal.runDevServer}
-                />
-              </ErrorBoundary>
-            </div>
-          </div>
-        )}
 
         {panels.showChat && (
           <div style={{ ...styles.panel, width: CHAT_WIDTH, display: 'flex', flexDirection: 'row' }}>
@@ -438,6 +442,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'auto', flexShrink: 0,
   },
   editorArea: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 320, position: 'relative' },
+  editorRow: { flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden', minHeight: 0 },
   editorPane: { flex: 1, overflow: 'hidden', minHeight: 0 },
   terminalPanel: {
     borderTop: '1px solid rgba(255,255,255,0.25)',
