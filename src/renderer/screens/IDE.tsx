@@ -83,6 +83,28 @@ export default function IDE() {
   const { toast } = useToast();
   const { settings, updateSetting } = useSettings();
 
+  // ── Voz nativa Claude CLI ────────────────────────────────────
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [isVoiceSupported, setIsVoiceSupported] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    window.api.claude.voiceStatus?.()
+      .then((s: { supported: boolean }) => setIsVoiceSupported(s.supported))
+      .catch(() => setIsVoiceSupported(false));
+  }, []);
+
+  const handleVoice = useCallback(async () => {
+    if (!isVoiceSupported) return;
+    // Garante que terminal está visível para o usuário ver a voz
+    terminal.setIsExpanded(true);
+    // Escreve configurações pt-BR e inicia /voice no terminal
+    await window.api.claude.writeVoiceSettings?.();
+    await window.api.claude.voiceStart?.();
+    setIsVoiceActive(true);
+    // Voz nativa do Claude não tem callback de fim — reseta indicador após 30s
+    setTimeout(() => setIsVoiceActive(false), 30_000);
+  }, [isVoiceSupported, terminal.setIsExpanded]);
+
   useKeyboardShortcuts({
     onSave: fileManager.handleSave,
     onToggleTerminal: () => terminal.setIsExpanded((v) => !v),
@@ -91,6 +113,7 @@ export default function IDE() {
     onToggleGit: panels.toggleGit,
     onOpenPalette: () => setShowPalette(true),
     onOpenSettings: () => setShowSettings(true),
+    onVoice: handleVoice,
   });
 
   // Abre preview automaticamente quando projeto abre ou porta é detectada
@@ -192,6 +215,9 @@ export default function IDE() {
         gitHubUser={github.ghStatus?.user}
         onGitHubSwitchAccount={() => github.setShowAuthModal(true)}
         onGitHubDisconnect={github.handleDisconnect}
+        onVoiceClick={handleVoice}
+        isVoiceActive={isVoiceActive}
+        isVoiceSupported={isVoiceSupported ?? true}
       />
 
       <div style={styles.main}>

@@ -8,6 +8,7 @@ interface UseKeyboardShortcutsOptions {
   onToggleGit: () => void;
   onOpenPalette?: () => void;
   onOpenSettings?: () => void;
+  onVoice?: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -18,6 +19,7 @@ export function useKeyboardShortcuts({
   onToggleGit,
   onOpenPalette,
   onOpenSettings,
+  onVoice,
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -48,6 +50,13 @@ export function useKeyboardShortcuts({
             onToggleGit();
           }
           break;
+        case 'V':
+          // Cmd+Shift+V
+          if (e.shiftKey) {
+            e.preventDefault();
+            onVoice?.();
+          }
+          break;
         case 'k':
           e.preventDefault();
           onOpenPalette?.();
@@ -61,5 +70,5 @@ export function useKeyboardShortcuts({
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onSave, onToggleTerminal, onToggleFileTree, onToggleChat, onToggleGit, onOpenPalette, onOpenSettings]);
+  }, [onSave, onToggleTerminal, onToggleFileTree, onToggleChat, onToggleGit, onOpenPalette, onOpenSettings, onVoice]);
 }

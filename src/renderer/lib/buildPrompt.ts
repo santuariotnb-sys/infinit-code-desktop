@@ -37,7 +37,7 @@ COMPORTAMENTO OBRIGATÓRIO:
    - Se a página do preview for / → use a página inicial
    - "tabela de pedidos" → busca em Banco de dados
    - "edge function de pagamento" → busca em Edge Functions
-3. Leia o arquivo COMPLETO antes de editar — nunca trabalhe com trechos
+3. Os arquivos necessários JÁ ESTÃO no contexto acima (tags <active_file> e <file>). NÃO use ferramentas read_file para arquivos já presentes — use diretamente o conteúdo do contexto.
 4. Execute diretamente sem pedir confirmações técnicas desnecessárias
 5. Após executar, confirme qual arquivo foi alterado e o que mudou
 6. Responda em português brasileiro; código permanece em inglês
@@ -90,13 +90,13 @@ export function findRelevantPaths(
       if (filename.includes(word) || word.includes(filename)) {
         const full = `${cwd}/${p}`;
         if (full !== activeFilePath) relevant.add(full);
-        if (relevant.size >= 5) break;
+        if (relevant.size >= 3) break;
       }
     }
-    if (relevant.size >= 5) break;
+    if (relevant.size >= 3) break;
   }
 
-  return [...relevant].slice(0, 5);
+  return [...relevant].slice(0, 3);
 }
 
 function hasError(output: string): boolean {
@@ -120,20 +120,32 @@ Use o mapeamento rota→componente do project_context para identificar o arquivo
 </preview_page>`);
   }
 
-  // 3. Contexto completo do projeto (package.json, tree, rotas, env)
+  // 3. Contexto do projeto — truncado para não explodir o prompt
   if (ctx.projectContext) {
-    parts.push(`<project_context>\n${ctx.projectContext}\n</project_context>`);
+    const MAX_CTX = 10_000;
+    const ctx_trimmed = ctx.projectContext.length > MAX_CTX
+      ? ctx.projectContext.slice(0, MAX_CTX) + '\n... [contexto truncado]'
+      : ctx.projectContext;
+    parts.push(`<project_context>\n${ctx_trimmed}\n</project_context>`);
   }
 
-  // 4. Arquivo ativo — conteúdo COMPLETO (não trecho)
+  // 4. Arquivo ativo — limitado a 400 linhas
   if (ctx.activeFile && ctx.activeFileContent) {
-    parts.push(`<active_file path="${ctx.activeFile}">\n${ctx.activeFileContent}\n</active_file>`);
+    const lines = ctx.activeFileContent.split('\n');
+    const content = lines.length > 400
+      ? lines.slice(0, 400).join('\n') + '\n... [arquivo truncado em 400 linhas]'
+      : ctx.activeFileContent;
+    parts.push(`<active_file path="${ctx.activeFile}">\n${content}\n</active_file>`);
   }
 
-  // 4. Arquivos relevantes identificados automaticamente
+  // 4. Arquivos relevantes — máx 3 arquivos, 150 linhas cada
   if (ctx.relevantFiles?.length) {
-    for (const f of ctx.relevantFiles) {
-      parts.push(`<file path="${f.path}">\n${f.content}\n</file>`);
+    for (const f of ctx.relevantFiles.slice(0, 3)) {
+      const lines = f.content.split('\n');
+      const content = lines.length > 150
+        ? lines.slice(0, 150).join('\n') + '\n... [truncado]'
+        : f.content;
+      parts.push(`<file path="${f.path}">\n${content}\n</file>`);
     }
   }
 

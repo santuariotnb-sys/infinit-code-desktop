@@ -49,6 +49,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   // Pergunta de aprovação — null = ainda não respondeu, true = sim, false = não
   const [approvalMode, setApprovalMode] = useState<boolean | null>(null);
   const [activeTool, setActiveTool] = useState<{ name: string; input: unknown } | null>(null);
+  const [selectedModel, setSelectedModel] = useState<'sonnet' | 'haiku' | 'opus'>('sonnet');
 
   const chat = useChatMessages();
   const voice = useVoiceInput({ onTranscript: (text) => setInput((prev) => prev ? `${prev} ${text}` : text) });
@@ -148,7 +149,12 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     }) ?? (() => {});
 
     try {
-      const result = await window.api.claude.ask?.({ prompt, cwd: ctx.cwd, sessionId: chat.sessionId ?? undefined });
+      const MODEL_IDS = {
+        sonnet: 'claude-sonnet-4-5-20251001',
+        haiku:  'claude-haiku-4-5-20251001',
+        opus:   'claude-opus-4-6',
+      };
+      const result = await window.api.claude.ask?.({ prompt, cwd: ctx.cwd, sessionId: chat.sessionId ?? undefined, model: MODEL_IDS[selectedModel] });
       chat.finishStreaming(result?.cost_usd, result?.sessionId);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido';
@@ -227,6 +233,23 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         {isIndexing && (
           <span style={{ fontSize: 9, color: '#f0a020', fontFamily: 'monospace' }}>indexando…</span>
         )}
+        {/* Seletor de modelo */}
+        <div style={{ display: 'flex', gap: 2, background: 'rgba(0,0,0,0.06)', borderRadius: 5, padding: 2 }}>
+          {(['haiku', 'sonnet', 'opus'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setSelectedModel(m)}
+              style={{
+                background: selectedModel === m ? 'rgba(60,176,67,0.15)' : 'transparent',
+                border: selectedModel === m ? '1px solid rgba(60,176,67,0.3)' : '1px solid transparent',
+                color: selectedModel === m ? '#3CB043' : '#888',
+                borderRadius: 3, padding: '1px 5px', fontSize: 9,
+                cursor: 'pointer', fontFamily: 'monospace', transition: 'all .12s',
+              }}
+              title={{ haiku: '⚡ Rápido (Haiku)', sonnet: '⚖ Balanceado (Sonnet)', opus: '🎯 Máximo (Opus)' }[m]}
+            >{m}</button>
+          ))}
+        </div>
         <button
           onClick={() => setApprovalMode((prev) => prev === true ? false : true)}
           style={{

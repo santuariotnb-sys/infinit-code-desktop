@@ -314,6 +314,7 @@ Ao revisar e escrever código:
     prompt: string;
     cwd: string;
     sessionId?: string;
+    model?: string;
   }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const winId = win?.id ?? 0;
@@ -332,7 +333,8 @@ Ao revisar e escrever código:
       '--output-format', 'stream-json',
       '--verbose',
       '--dangerously-skip-permissions',
-      '--max-turns', '30',
+      '--model', payload.model ?? 'claude-sonnet-4-5-20251001',
+      '--max-turns', '15',
     ];
     if (existingSession) args.push('--resume', existingSession);
 

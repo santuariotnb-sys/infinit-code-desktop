@@ -63,7 +63,7 @@ contextBridge.exposeInMainWorld('api', {
     voiceStatus: () => ipcRenderer.invoke('claude:voice-status'),
     voiceStart: () => ipcRenderer.invoke('claude:voice-start'),
     writeVoiceSettings: () => ipcRenderer.invoke('claude:write-voice-settings'),
-    ask: (payload: { prompt: string; cwd: string; sessionId?: string }) =>
+    ask: (payload: { prompt: string; cwd: string; sessionId?: string; model?: string }) =>
       ipcRenderer.invoke('claude:ask', payload),
     clearSession: () => ipcRenderer.invoke('claude:clear-session'),
     cancel: () => ipcRenderer.invoke('claude:cancel'),

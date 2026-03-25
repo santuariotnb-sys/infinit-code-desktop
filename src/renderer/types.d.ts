@@ -56,7 +56,7 @@ interface ElectronAPI {
     onInstallProgress: (cb: (data: { pct: number; msg: string }) => void) => () => void;
     onAuthenticated: (cb: () => void) => () => void;
     status?: () => Promise<{ installed: boolean; version: string | null; hasSdkKey?: boolean; mode?: 'sdk' | 'cli' }>;
-    ask?: (payload: { prompt: string; cwd: string; sessionId?: string }) =>
+    ask?: (payload: { prompt: string; cwd: string; sessionId?: string; model?: string }) =>
       Promise<{ ok: boolean; sessionId: string | null; cost_usd: number; chunks: object[] }>;
     clearSession?: () => Promise<{ ok: boolean }>;
     cancel?: () => Promise<{ ok: boolean }>;

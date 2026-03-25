@@ -30,6 +30,9 @@ interface ToolbarProps {
   gitHubUser?: string;
   onGitHubSwitchAccount?: () => void;
   onGitHubDisconnect?: () => void;
+  onVoiceClick?: () => void;
+  isVoiceActive?: boolean;
+  isVoiceSupported?: boolean;
 }
 
 const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
@@ -41,6 +44,7 @@ export default function Toolbar({
   gitChangeCount, gitBranch = 'main', livePort, onLogout, isChatStreaming,
   onOpenPalette, onOpenSettings,
   isGitHubConnected, gitHubUser, onGitHubSwitchAccount, onGitHubDisconnect,
+  onVoiceClick, isVoiceActive, isVoiceSupported,
 }: ToolbarProps) {
   const projectName = projectPath ? (projectPath.split('/').pop() || projectPath) : '';
   const [session, setSession] = useState<{ name: string; avatar: string } | null>(null);
@@ -236,19 +240,32 @@ export default function Toolbar({
         </button>
       </div>
 
-      {/* Voice button */}
-      <button
-        style={{ ...pill(false), // @ts-expect-error no-drag
-          WebkitAppRegion: 'no-drag' }}
-        title="Voz PT-BR (⌘⇧V)"
-      >
-        <svg width="11" height="13" viewBox="0 0 11 13" fill="none">
-          <rect x="3" y=".5" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.1" />
-          <path d="M1 6.5C1 9 2.8 11 5.5 11s4.5-2 4.5-4.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" />
-          <path d="M5.5 11v1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-        </svg>
-        Voz
-      </button>
+      {/* Voice button — só renderiza se suportado */}
+      {isVoiceSupported !== false && (
+        <button
+          style={{
+            ...pill(!!isVoiceActive, isVoiceActive), // @ts-expect-error no-drag
+            WebkitAppRegion: 'no-drag',
+            ...(isVoiceActive ? { background: 'rgba(60,176,67,0.15)', color: '#3CB043', boxShadow: '0 0 0 2px rgba(60,176,67,0.3)' } : {}),
+          }}
+          onClick={onVoiceClick}
+          title={isVoiceActive ? 'Voz ativa — clique para parar (⌘⇧V)' : 'Iniciar voz PT-BR (⌘⇧V)'}
+        >
+          <svg width="11" height="13" viewBox="0 0 11 13" fill="none">
+            <rect x="3" y=".5" width="5" height="8" rx="2.5" stroke="currentColor" strokeWidth="1.1" />
+            <path d="M1 6.5C1 9 2.8 11 5.5 11s4.5-2 4.5-4.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" fill="none" />
+            <path d="M5.5 11v1.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          </svg>
+          {isVoiceActive ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              Ouvindo
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{ width: 2, height: 8, background: 'currentColor', borderRadius: 2, animation: `tbPulse 0.6s ${i * 0.15}s ease-in-out infinite alternate` }} />
+              ))}
+            </span>
+          ) : 'Voz'}
+        </button>
+      )}
 
       {/* Command palette pill */}
       <button
