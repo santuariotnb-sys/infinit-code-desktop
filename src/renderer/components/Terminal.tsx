@@ -95,15 +95,31 @@ export default function Terminal() {
     };
   }, []);
 
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    for (const file of droppedFiles) {
+      const filePath = (file as File & { path?: string }).path ?? file.name;
+      window.api.terminal.write(filePath.includes(' ') ? `"${filePath}"` : filePath);
+    }
+    termRef.current?.focus();
+  }
+
   return (
     <div
-      ref={containerRef}
-      style={{
-        width: '100%',
-        height: '100%',
-        padding: '4px 8px',
-        background: '#0a0a0a',
-      }}
-    />
+      style={{ width: '100%', height: '100%', position: 'relative' }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+    >
+      <div
+        ref={containerRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          padding: '4px 8px',
+          background: '#0a0a0a',
+        }}
+      />
+    </div>
   );
 }
