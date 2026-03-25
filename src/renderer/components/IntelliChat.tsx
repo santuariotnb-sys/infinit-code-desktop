@@ -24,6 +24,8 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
   const [actionCards, setActionCards] = useState<ActionCard[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showResults, setShowResults] = useState(true);
+  // Pergunta de aprovação — null = ainda não respondeu, true = sim, false = não
+  const [approvalMode, setApprovalMode] = useState<boolean | null>(null);
 
   const chat = useChatMessages();
   const voice = useVoiceInput({ onTranscript: (text) => setInput((prev) => prev ? `${prev} ${text}` : text) });
@@ -59,23 +61,6 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
       return;
     }
 
-    // Verify Claude is installed before sending
-    try {
-      const statusResult = await window.api.claude.status?.();
-      if (!statusResult?.installed) {
-        chat.addSystemMessage('Claude Code não encontrado. Execute: npm install -g @anthropic-ai/claude-code');
-        chat.setClaudeStatus('offline');
-        return;
-      }
-    } catch {
-      // If status check fails, fall through to the claudeStatus check below
-    }
-
-    if (chat.claudeStatus === 'offline') {
-      chat.addSystemMessage('Claude Code não encontrado. Inicie no terminal primeiro.');
-      return;
-    }
-
     const isResearch = mode === 'research';
     const ctx: ChatContext = {
       cwd: projectPath ?? (typeof process !== 'undefined' ? process.env.HOME ?? '~' : '~'),
@@ -86,6 +71,13 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
     };
 
     let prompt = buildPrompt(msg, ctx);
+
+    // Instrução de aprovação baseada na escolha do usuário
+    if (approvalMode === true) {
+      prompt += '\n\n[INSTRUÇÃO: Antes de cada fase de implementação, apresente um resumo do que vai fazer e aguarde aprovação explícita do usuário.]';
+    } else {
+      prompt += '\n\n[INSTRUÇÃO: Execute todas as tarefas diretamente sem pedir aprovação ou confirmação. Apenas faça.]';
+    }
     for (const f of files.attached) {
       prompt += f.type === 'screenshot' ? `\n\n<screenshot>${f.content}</screenshot>` : `\n\n<file name="${f.name}">\n${f.content}\n</file>`;
     }
@@ -177,6 +169,18 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         {isEmpty
           ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+              {/* Pergunta de aprovação — só aparece uma vez por sessão */}
+              {approvalMode === null && (
+                <div style={styles.approvalCard}>
+                  <p style={styles.approvalText}>
+                    Quer que eu te passe todas as fases de construção te pedindo aprovação?
+                  </p>
+                  <div style={styles.approvalBtns}>
+                    <button style={styles.approvalBtnYes} onClick={() => setApprovalMode(true)}>✓ Sim</button>
+                    <button style={styles.approvalBtnNo} onClick={() => setApprovalMode(false)}>✗ Não</button>
+                  </div>
+                </div>
+              )}
               <ChatEmptyState onQuickAction={(inject, delay) => { onTerminalInject(inject); if (delay) setTimeout(() => onTerminalInject(delay), 800); }} />
               <div style={styles.quickSends}>
                 {QUICK_SENDS.map((qs) => (
@@ -288,5 +292,44 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'left',
     fontFamily: 'inherit',
     transition: 'background 0.12s, color 0.12s',
+  } as React.CSSProperties,
+  approvalCard: {
+    margin: '16px 12px 4px',
+    background: 'rgba(0,255,136,0.04)',
+    border: '1px solid rgba(0,255,136,0.15)',
+    borderRadius: 8,
+    padding: '14px 16px',
+    flexShrink: 0,
+  } as React.CSSProperties,
+  approvalText: {
+    color: '#aaa',
+    fontSize: 12,
+    lineHeight: 1.5,
+    margin: '0 0 12px',
+  } as React.CSSProperties,
+  approvalBtns: {
+    display: 'flex',
+    gap: 8,
+  } as React.CSSProperties,
+  approvalBtnYes: {
+    background: 'rgba(0,255,136,0.12)',
+    border: '1px solid rgba(0,255,136,0.3)',
+    color: '#00ff88',
+    borderRadius: 6,
+    padding: '6px 18px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontWeight: 600,
+  } as React.CSSProperties,
+  approvalBtnNo: {
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid #2a2a2a',
+    color: '#666',
+    borderRadius: 6,
+    padding: '6px 18px',
+    fontSize: 12,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
   } as React.CSSProperties,
 };

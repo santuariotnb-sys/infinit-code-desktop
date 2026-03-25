@@ -304,6 +304,66 @@ Ao revisar e escrever código:
     }
   });
 
+  // ── API direta — fallback quando CLI não está instalado ──
+  async function askViaApi(
+    prompt: string,
+    cwd: string,
+    sender: Electron.WebContents,
+  ): Promise<{ ok: boolean; cost_usd: number; sessionId: null }> {
+    const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
+    if (!apiKey) throw new Error('ANTHROPIC_API_KEY não encontrada. Adicione no seu ambiente ou no arquivo .env do projeto.');
+
+    const body = JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 8192,
+      stream: true,
+      system: `Você é um assistente de desenvolvimento de software especializado. Diretório de trabalho: ${cwd}. Execute tarefas diretamente sem pedir confirmação adicional, a menos que seja explicitamente solicitado pelo usuário.`,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Anthropic API erro ${res.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let outputTokens = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value, { stream: true });
+      for (const line of text.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (!data || data === '[DONE]') continue;
+        try {
+          const json = JSON.parse(data);
+          if (json.type === 'content_block_delta' && json.delta?.type === 'text_delta') {
+            sender.send('claude:chunk', { text: json.delta.text });
+          }
+          if (json.type === 'message_delta' && json.usage?.output_tokens) {
+            outputTokens = json.usage.output_tokens;
+          }
+        } catch { /* linha inválida */ }
+      }
+    }
+
+    // ~$3/MTok Sonnet estimativa
+    return { ok: true, cost_usd: outputTokens * 0.000003, sessionId: null };
+  }
+
   // ── Headless ask — sessão contínua ───────────────────────
   ipcMain.handle('claude:ask', async (event, payload: {
     prompt: string;
@@ -320,7 +380,7 @@ Ao revisar e escrever código:
       '--output-format', 'stream-json',
       '--bare',
       '--dangerously-skip-permissions',
-      '--max-turns', '3',
+      '--max-turns', '10',
     ];
 
     if (existingSession) {
@@ -339,8 +399,8 @@ Ao revisar e escrever código:
 
       const timeout = setTimeout(() => {
         proc.kill('SIGTERM');
-        reject(new Error('timeout: Claude demorou mais de 90s'));
-      }, 90_000);
+        reject(new Error('timeout: Claude demorou mais de 120s'));
+      }, 120_000);
 
       proc.stdout.on('data', (data: Buffer) => {
         const lines = data.toString().split('\n').filter(Boolean);
@@ -348,28 +408,15 @@ Ao revisar e escrever código:
           try {
             const json = JSON.parse(line);
             chunks.push(json);
-
-            if (json.session_id) {
-              newSessionId = json.session_id;
-            }
-
-            if (json.cost_usd) {
-              totalCost = json.cost_usd;
-            }
-
-            if (
-              json.type === 'stream_event' &&
-              json.event?.delta?.type === 'text_delta'
-            ) {
+            if (json.session_id) newSessionId = json.session_id;
+            if (json.cost_usd) totalCost = json.cost_usd;
+            if (json.type === 'stream_event' && json.event?.delta?.type === 'text_delta') {
               event.sender.send('claude:chunk', { text: json.event.delta.text });
             }
-
             if (json.type === 'tool_use' && json.name) {
               event.sender.send('claude:tool', { name: json.name, input: json.input });
             }
-          } catch {
-            // linha não é JSON válido — ignora
-          }
+          } catch { /* linha não JSON */ }
         }
       });
 
@@ -382,21 +429,20 @@ Ao revisar e escrever código:
 
       proc.on('close', (code) => {
         clearTimeout(timeout);
-        if (newSessionId) {
-          sessions.set(winId, newSessionId);
-        }
-        resolve({
-          ok: code === 0,
-          sessionId: newSessionId,
-          cost_usd: totalCost,
-          chunks,
-        });
+        if (newSessionId) sessions.set(winId, newSessionId);
+        resolve({ ok: code === 0, sessionId: newSessionId, cost_usd: totalCost, chunks });
       });
 
-      proc.on('error', (err) => {
+      proc.on('error', async (err) => {
         clearTimeout(timeout);
+        // CLI não encontrado → tenta API direta
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          reject(new Error('Claude Code não encontrado. Rode o setup primeiro.'));
+          try {
+            const result = await askViaApi(payload.prompt, payload.cwd, event.sender);
+            resolve(result);
+          } catch (apiErr) {
+            reject(apiErr);
+          }
         } else {
           reject(err);
         }
@@ -413,12 +459,13 @@ Ao revisar e escrever código:
 
   // ── Status do Claude Code ────────────────────────────────
   ipcMain.handle('claude:status', async () => {
+    const hasApiKey = !!(process.env.ANTHROPIC_API_KEY);
     return new Promise((resolve) => {
       const proc = spawn(CLAUDE_BIN, ['--version'], { timeout: 5000, env: RICH_ENV });
       let version = '';
       proc.stdout.on('data', (d: Buffer) => (version += d.toString()));
-      proc.on('close', (code) => resolve({ installed: code === 0, version: version.trim() }));
-      proc.on('error', () => resolve({ installed: false, version: null }));
+      proc.on('close', (code) => resolve({ installed: code === 0 || hasApiKey, version: version.trim(), hasApiKey }));
+      proc.on('error', () => resolve({ installed: hasApiKey, version: null, hasApiKey }));
     });
   });
 }
