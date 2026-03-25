@@ -245,19 +245,7 @@ export default function IDE() {
                 )}
               </div>
             ) : (
-              // Project open but no file selected — show keyboard shortcuts hint
-              <div style={styles.noFile}>
-                <div style={styles.emptyProjectHint}>
-                  <p style={styles.noFileText}>Selecione um arquivo para editar</p>
-                  <div style={styles.shortcutList}>
-                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘S</kbd><span>Salvar</span></div>
-                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘`</kbd><span>Toggle Terminal</span></div>
-                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘B</kbd><span>Toggle Arquivos</span></div>
-                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘J</kbd><span>Toggle Chat</span></div>
-                    <div style={styles.shortcutRow}><kbd style={styles.kbd}>⌘⇧G</kbd><span>Toggle Git</span></div>
-                  </div>
-                </div>
-              </div>
+              <div style={styles.noFile} />
             )}
           </div>
 
