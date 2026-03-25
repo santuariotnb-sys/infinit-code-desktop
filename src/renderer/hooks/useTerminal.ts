@@ -74,6 +74,8 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
     return () => {
       cleanup();
       exitCleanup();
+      // Matar ghost process ao desmontar para não vazar processos dev server
+      window.api.terminal.ghost.kill().catch?.(() => {});
     };
   }, []);
 

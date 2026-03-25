@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const SpeechRecognition = (typeof window !== 'undefined') && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
@@ -39,6 +39,14 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
     recognitionRef.current = rec;
     rec.start();
   }
+
+  // Parar reconhecimento ao desmontar — evita mic ativo em background
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+    };
+  }, []);
 
   return {
     isListening,

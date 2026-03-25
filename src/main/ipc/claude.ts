@@ -1,29 +1,14 @@
-import { ipcMain, BrowserWindow, shell, safeStorage } from 'electron';
+import { ipcMain, BrowserWindow, shell } from 'electron';
 import { execSync, exec, spawn } from 'child_process';
-import Anthropic from '@anthropic-ai/sdk';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-// Guarda session_id por janela para memória contínua (CLI path)
+// Guarda session_id por janela para memória contínua
 const sessions = new Map<number, string>();
 
-// Arquivo para API key criptografada
-const API_KEY_PATH = path.join(os.homedir(), '.infinitcode', 'ak');
-
-// ── API Key (safeStorage) ────────────────────────────────────
-function getStoredApiKey(): string {
-  // 1. Variável de ambiente tem prioridade
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
-  // 2. Chave salva via safeStorage
-  try {
-    if (fs.existsSync(API_KEY_PATH)) {
-      const buf = fs.readFileSync(API_KEY_PATH);
-      return safeStorage.decryptString(buf);
-    }
-  } catch { /* ignora */ }
-  return '';
-}
+// Guarda processo ativo por janela (para cancelamento)
+const activeProcesses = new Map<number, ReturnType<typeof spawn>>();
 
 // ── Caminhos do binário Claude Code CLI ─────────────────────
 const CLAUDE_SEARCH_PATHS = [
@@ -62,38 +47,16 @@ const RICH_ENV = {
   ].join(':'),
 };
 
-// ── SDK Anthropic — streaming real token a token ─────────────
-async function askViaSDK(
-  prompt: string,
-  cwd: string,
-  sender: Electron.WebContents,
-): Promise<{ ok: boolean; cost_usd: number; sessionId: null }> {
-  const apiKey = getStoredApiKey();
-  if (!apiKey) throw new Error('Chave API não configurada. Adicione em Configurações → Claude Code → Chave API.');
-
-  const client = new Anthropic({ apiKey });
-
-  const stream = client.messages.stream({
-    model: 'claude-opus-4-5',
-    max_tokens: 8096,
-    system: `Você é um assistente especializado em desenvolvimento de software. Diretório de trabalho: ${cwd}. Execute tarefas diretamente sem pedir confirmação, a menos que explicitamente solicitado pelo usuário.`,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  stream.on('text', (text) => {
-    if (!sender.isDestroyed()) sender.send('claude:chunk', { text });
-  });
-
-  stream.on('error', (err) => {
-    if (!sender.isDestroyed()) sender.send('claude:error', { message: err.message });
-  });
-
-  const final = await stream.finalMessage();
-  const cost = (final.usage.input_tokens * 3 + final.usage.output_tokens * 15) / 1_000_000;
-  return { ok: true, cost_usd: cost, sessionId: null };
-}
-
 export function registerClaudeHandlers(mainWindow: BrowserWindow): void {
+  // Limpeza quando janela fechar — evita sessions e processos presos na memória
+  mainWindow.on('closed', () => {
+    const winId = mainWindow.id;
+    const proc = activeProcesses.get(winId);
+    if (proc) { try { proc.kill('SIGTERM'); } catch { /* já morto */ } }
+    activeProcesses.delete(winId);
+    sessions.delete(winId);
+  });
+
   ipcMain.handle('claude:check-installed', () => {
     try {
       const version = execSync(`"${CLAUDE_BIN}" --version`, { encoding: 'utf-8', timeout: 5000, env: RICH_ENV }).trim();
@@ -347,37 +310,12 @@ Ao revisar e escrever código:
     }
   });
 
-  // ── API Key — salvar/ler via safeStorage ─────────────────
-  ipcMain.handle('claude:save-api-key', (_, key: string) => {
-    try {
-      const dir = path.dirname(API_KEY_PATH);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const encrypted = safeStorage.encryptString(key.trim());
-      fs.writeFileSync(API_KEY_PATH, encrypted);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: (e as Error).message };
-    }
-  });
-
-  ipcMain.handle('claude:get-api-key', () => {
-    const key = getStoredApiKey();
-    return { configured: !!key, masked: key ? `sk-ant-...${key.slice(-4)}` : '' };
-  });
-
-  // ── Headless ask — SDK (streaming real) ou CLI fallback ──
+  // ── Headless ask — Claude Code CLI (mesma auth do terminal) ──
   ipcMain.handle('claude:ask', async (event, payload: {
     prompt: string;
     cwd: string;
     sessionId?: string;
   }) => {
-    // Prioridade 1: SDK com API key → streaming token a token
-    const apiKey = getStoredApiKey();
-    if (apiKey) {
-      return askViaSDK(payload.prompt, payload.cwd, event.sender);
-    }
-
-    // Prioridade 2: Claude Code CLI (requer instalação e auth)
     const win = BrowserWindow.fromWebContents(event.sender);
     const winId = win?.id ?? 0;
     const existingSession = payload.sessionId ?? sessions.get(winId);
@@ -385,22 +323,34 @@ Ao revisar e escrever código:
     const args = [
       '-p', payload.prompt,
       '--output-format', 'stream-json',
+      '--verbose',
       '--dangerously-skip-permissions',
-      '--max-turns', '10',
+      '--max-turns', '30',
     ];
     if (existingSession) args.push('--resume', existingSession);
 
     return new Promise((resolve, reject) => {
       const proc = spawn(CLAUDE_BIN, args, { cwd: payload.cwd, env: RICH_ENV });
+      activeProcesses.set(winId, proc);
 
       let newSessionId: string | null = null;
       let totalCost = 0;
       const chunks: object[] = [];
 
+      const warningTimer = setTimeout(() => {
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('claude:error', { message: 'Claude está demorando mais de 1 minuto...' });
+        }
+      }, 60_000);
+
       const timeout = setTimeout(() => {
+        clearTimeout(warningTimer);
         proc.kill('SIGTERM');
-        reject(new Error('Timeout: Claude demorou mais de 120s'));
-      }, 120_000);
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('claude:error', { message: 'Timeout: Claude demorou mais de 5 minutos. Tente novamente.' });
+        }
+        reject(new Error('Timeout: Claude demorou mais de 5 minutos'));
+      }, 300_000);
 
       let stdoutBuffer = '';
       proc.stdout.on('data', (data: Buffer) => {
@@ -422,10 +372,10 @@ Ao revisar e escrever código:
                 if (block.type === 'text' && block.text) {
                   event.sender.send('claude:chunk', { text: block.text });
                 }
+                if (block.type === 'tool_use' && block.name) {
+                  event.sender.send('claude:tool', { name: block.name, input: block.input });
+                }
               }
-            }
-            if (json.type === 'tool_use' && json.name) {
-              event.sender.send('claude:tool', { name: json.name, input: json.input });
             }
           } catch { /* linha não JSON */ }
         }
@@ -439,20 +389,37 @@ Ao revisar e escrever código:
       });
 
       proc.on('close', (code) => {
+        clearTimeout(warningTimer);
         clearTimeout(timeout);
+        activeProcesses.delete(winId);
         if (newSessionId) sessions.set(winId, newSessionId);
         resolve({ ok: code === 0, sessionId: newSessionId, cost_usd: totalCost, chunks });
       });
 
       proc.on('error', (err) => {
+        clearTimeout(warningTimer);
         clearTimeout(timeout);
+        activeProcesses.delete(winId);
         reject(new Error(
           (err as NodeJS.ErrnoException).code === 'ENOENT'
-            ? 'Claude Code CLI não encontrado. Configure sua Chave API em Configurações.'
+            ? `Claude Code CLI não encontrado em "${CLAUDE_BIN}". Execute: npm install -g @anthropic-ai/claude-code`
             : err.message
         ));
       });
     });
+  });
+
+  // ── Cancelar processo ativo ───────────────────────────────
+  ipcMain.handle('claude:cancel', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const winId = win?.id ?? 0;
+    const proc = activeProcesses.get(winId);
+    if (proc) {
+      proc.kill('SIGTERM');
+      activeProcesses.delete(winId);
+      return { ok: true };
+    }
+    return { ok: false };
   });
 
   // ── Limpa sessão ─────────────────────────────────────────
@@ -464,14 +431,12 @@ Ao revisar e escrever código:
 
   // ── Status do Claude Code ────────────────────────────────
   ipcMain.handle('claude:status', async () => {
-    const apiKey = getStoredApiKey();
-    const hasSdkKey = !!apiKey;
     return new Promise((resolve) => {
       const proc = spawn(CLAUDE_BIN, ['--version'], { timeout: 5000, env: RICH_ENV });
       let version = '';
       proc.stdout.on('data', (d: Buffer) => (version += d.toString()));
-      proc.on('close', (code) => resolve({ installed: code === 0 || hasSdkKey, version: version.trim(), hasSdkKey, mode: hasSdkKey ? 'sdk' : 'cli' }));
-      proc.on('error', () => resolve({ installed: hasSdkKey, version: null, hasSdkKey, mode: hasSdkKey ? 'sdk' : 'cli' }));
+      proc.on('close', (code) => resolve({ installed: code === 0, version: version.trim() }));
+      proc.on('error', () => resolve({ installed: false, version: null }));
     });
   });
 }

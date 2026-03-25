@@ -67,6 +67,14 @@ function safeSend(win: BrowserWindow, channel: string, payload: unknown) {
   if (!win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
+function isCwdSafe(cwd: string): boolean {
+  try {
+    const resolved = path.resolve(cwd);
+    const home = path.resolve(os.homedir());
+    return resolved === home || resolved.startsWith(home + path.sep);
+  } catch { return false; }
+}
+
 export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
   // ── Device Flow: step 1 — request device code ─────────────
@@ -249,6 +257,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
   // ── Local git status ───────────────────────────────────────
   ipcMain.handle('github:git-status', (_evt, cwd: string) => {
+    if (!isCwdSafe(cwd)) return { isRepo: false, branch: '', changes: [] };
     try {
       const statusOut = execSync('git status --porcelain', { cwd, encoding: 'utf-8', timeout: 5000 });
       const branch = execSync('git branch --show-current', { cwd, encoding: 'utf-8', timeout: 5000 }).trim();
@@ -267,6 +276,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
   // ── Commit (add → commit with message) ─────────────────────
   ipcMain.handle('github:commit', (_evt, cwd: string, message: string) => {
+    if (!isCwdSafe(cwd)) return { ok: false, error: 'Diretório não autorizado' };
     try {
       execSync('git add -A', { cwd, encoding: 'utf-8', timeout: 5000 });
       execSync(`git commit -m ${JSON.stringify(message)}`, { cwd, encoding: 'utf-8', timeout: 5000 });
@@ -278,6 +288,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
   // ── Sync (add → commit → pull --rebase → push) ─────────────
   ipcMain.handle('github:sync', (_evt, cwd: string, branch: string) => {
+    if (!isCwdSafe(cwd)) return Promise.resolve({ pushed: false, conflicts: false, log: 'Diretório não autorizado' });
     return new Promise<{ pushed: boolean; conflicts: boolean; log: string }>((resolve) => {
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const steps: [string, string[]][] = [
@@ -316,6 +327,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
   // ── Pull ───────────────────────────────────────────────────
   ipcMain.handle('github:pull', (_evt, cwd: string, branch: string) => {
+    if (!isCwdSafe(cwd)) return Promise.resolve({ ok: false });
     return new Promise<{ ok: boolean }>((resolve) => {
       const proc = spawn('git', ['pull', 'origin', branch], { cwd });
       proc.stdout?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
@@ -326,6 +338,7 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
 
   // ── Push ───────────────────────────────────────────────────
   ipcMain.handle('github:push', (_evt, cwd: string, branch: string) => {
+    if (!isCwdSafe(cwd)) return Promise.resolve({ ok: false });
     return new Promise<{ ok: boolean }>((resolve) => {
       const proc = spawn('git', ['push', 'origin', branch], { cwd });
       proc.stdout?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));

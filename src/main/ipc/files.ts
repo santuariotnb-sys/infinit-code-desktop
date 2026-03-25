@@ -77,13 +77,13 @@ function isPathSafe(filePath: string, allowedRoot?: string): boolean {
 
   if (BLOCKED_PREFIXES.some((b) => resolved.startsWith(b))) return false;
 
-  // Reject symlinks pointing outside home
+  // Reject symlinks pointing outside home (com normalização para evitar traversal)
   try {
     const stat = fs.lstatSync(resolved);
     if (stat.isSymbolicLink()) {
-      const real = fs.realpathSync(resolved);
-      const home = path.resolve(os.homedir());
-      if (!real.startsWith(home)) return false;
+      const real = path.normalize(fs.realpathSync(resolved));
+      const home = path.normalize(path.resolve(os.homedir())) + path.sep;
+      if (!real.startsWith(home) && real !== home.slice(0, -1)) return false;
     }
   } catch { /* path doesn't exist yet — allow (write case) */ }
 
