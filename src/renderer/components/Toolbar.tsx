@@ -225,7 +225,8 @@ export default function Toolbar({
         </div>
         {showGitHubMenu && isGitHubConnected && (
           <div style={{ ...styles.dropMenu, right: 0, left: 'auto', minWidth: 180 }}>
-            <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+            <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid rgba(0,0,0,0.06)', // @ts-expect-error no-drag
+              WebkitAppRegion: 'no-drag' }}>
               <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>GitHub</div>
               {gitHubUser && <div style={{ fontSize: 12, fontWeight: 500, color: '#1a1c20', marginTop: 2 }}>{gitHubUser}</div>}
             </div>
@@ -415,6 +416,8 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 1px 0 rgba(255,255,255,0.9) inset, 0 8px 32px rgba(0,0,0,0.14)',
     border: '1px solid rgba(255,255,255,0.5)',
     overflow: 'hidden',
+    // @ts-expect-error electron no-drag
+    WebkitAppRegion: 'no-drag',
   },
   dropItem: {
     display: 'flex' as const,
@@ -430,5 +433,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: '-apple-system, sans-serif',
     textAlign: 'left' as const,
     transition: 'background .1s',
+    // @ts-expect-error electron no-drag
+    WebkitAppRegion: 'no-drag',
   },
 };
