@@ -145,7 +145,9 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   const probeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detectedPortRef = useRef<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const autoStartedRef = useRef(false);
+  // Rastreia por path (não boolean) para evitar race condition entre effects
+  const autoStartedForRef = useRef<string | null>(null);
+  const autoInstalledForRef = useRef<string | null>(null);
 
   // ── Detecta rotas do arquivo de roteamento do projeto ──
   const detectRoutes = useCallback(async () => {
@@ -191,29 +193,41 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showRoutesPicker]);
 
-  // Auto-start dev server quando projeto abre — SÓ se node_modules instalado
+  // Reset ao trocar de projeto — sempre primeiro
   useEffect(() => {
-    if (projectPath && onRunDev && !autoStartedRef.current && hasNodeModules === true) {
-      autoStartedRef.current = true;
-      setTimeout(() => onRunDev(), 800);
-    }
-  }, [projectPath, hasNodeModules]);
-
-  // Reset estado quando troca de projeto
-  useEffect(() => {
-    if (projectPath) {
-      autoStartedRef.current = false;
-      detectedPortRef.current = null;
-      setPort(null);
-      setStatus('idle');
-      setCurrentPath('/');
-      setDraftPath('/');
-      setServerError(false);
-      setIframeRetries(0);
-      setRoutes([]);
-      setShowRoutesPicker(false);
-    }
+    if (!projectPath) return;
+    autoStartedForRef.current = null;
+    autoInstalledForRef.current = null;
+    detectedPortRef.current = null;
+    setPort(null);
+    setStatus('idle');
+    setCurrentPath('/');
+    setDraftPath('/');
+    setServerError(false);
+    setIframeRetries(0);
+    setRoutes([]);
+    setShowRoutesPicker(false);
   }, [projectPath]);
+
+  // Auto-install quando faltam node_modules
+  useEffect(() => {
+    if (!projectPath || hasNodeModules !== false) return;
+    if (autoInstalledForRef.current === projectPath) return;
+    autoInstalledForRef.current = projectPath;
+    const cmd =
+      pkgManager === 'bun' ? 'bun install' :
+      pkgManager === 'pnpm' ? 'pnpm install' :
+      pkgManager === 'yarn' ? 'yarn' : 'npm install';
+    setTimeout(() => window.api.terminal.write(cmd + '\r'), 800);
+  }, [projectPath, hasNodeModules, pkgManager]);
+
+  // Auto-start dev server quando node_modules está disponível
+  useEffect(() => {
+    if (!projectPath || !onRunDev || hasNodeModules !== true) return;
+    if (autoStartedForRef.current === projectPath) return;
+    autoStartedForRef.current = projectPath;
+    setTimeout(() => onRunDev(), 600);
+  }, [projectPath, hasNodeModules, onRunDev]);
 
   // Cleanup timers
   useEffect(() => {
@@ -438,36 +452,39 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
       {!port ? (
         <div style={s.idle}>
           <div style={s.idleIcon}><IconDesktop /></div>
-          <p style={s.idleTitle}>Preview ao Vivo</p>
 
           {!projectPath && (
-            <p style={s.idleSubtitle}>Abra um projeto para ver o preview</p>
+            <>
+              <p style={s.idleTitle}>Preview ao Vivo</p>
+              <p style={s.idleSubtitle}>Abra um projeto para começar</p>
+            </>
           )}
 
           {projectPath && hasNodeModules === null && (
-            <p style={s.idleSubtitle}>Verificando dependências…</p>
+            <>
+              <p style={s.idleTitle}>Verificando projeto…</p>
+              <div style={s.spinner} />
+            </>
           )}
 
           {projectPath && hasNodeModules === false && (
             <>
-              <p style={s.idleSubtitle}>Dependências não instaladas</p>
-              <button style={s.runBtn} onClick={() => {
-                const installCmd = pkgManager === 'bun' ? 'bun install' :
-                                   pkgManager === 'pnpm' ? 'pnpm install' :
-                                   pkgManager === 'yarn' ? 'yarn' : 'npm install';
-                window.api.terminal.write(installCmd + '\r');
-              }}>
-                ↓ {pkgManager} install
-              </button>
+              <p style={s.idleTitle}>Instalando dependências</p>
+              <p style={s.idleSubtitle}>Rodando <code style={s.code}>{pkgManager === 'bun' ? 'bun install' : pkgManager === 'pnpm' ? 'pnpm install' : pkgManager === 'yarn' ? 'yarn' : 'npm install'}</code> no terminal…</p>
+              <div style={s.spinner} />
+              <button style={s.runBtnSecondary} onClick={() => {
+                const cmd = pkgManager === 'bun' ? 'bun install' : pkgManager === 'pnpm' ? 'pnpm install' : pkgManager === 'yarn' ? 'yarn' : 'npm install';
+                window.api.terminal.write(cmd + '\r');
+              }}>↺ Reinstalar</button>
             </>
           )}
 
-          {projectPath && hasNodeModules === true && onRunDev && (
+          {projectPath && hasNodeModules === true && (
             <>
-              <p style={s.idleSubtitle}>Iniciando servidor…</p>
-              <button style={s.runBtn} onClick={onRunDev}>
-                ▶ {pkgManager} run dev
-              </button>
+              <p style={s.idleTitle}>Iniciando servidor…</p>
+              <p style={s.idleSubtitle}>Aguardando <code style={s.code}>{pkgManager} run dev</code></p>
+              <div style={s.spinner} />
+              <button style={s.runBtnSecondary} onClick={onRunDev}>▶ Iniciar manualmente</button>
             </>
           )}
         </div>
@@ -671,36 +688,53 @@ const s: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 12,
     padding: 32,
   },
   idleIcon: {
-    color: '#222',
+    color: '#3a3a3a',
     fontSize: 48,
     marginBottom: 4,
   },
   idleTitle: {
-    color: '#444',
+    color: '#aaa',
     fontSize: 13,
     fontWeight: 600,
     margin: 0,
+    textAlign: 'center' as const,
   },
   idleSubtitle: {
-    color: '#2a2a2a',
+    color: '#666',
     fontSize: 11,
-    textAlign: 'center',
-    lineHeight: 1.5,
-    maxWidth: 220,
+    textAlign: 'center' as const,
+    lineHeight: 1.6,
+    maxWidth: 240,
     margin: 0,
   },
-  runBtn: {
-    marginTop: 6,
-    background: 'transparent',
-    border: '1px solid #222',
-    color: '#22c55e',
-    padding: '6px 14px',
-    borderRadius: 6,
+  code: {
+    background: 'rgba(255,255,255,0.06)',
+    borderRadius: 3,
+    padding: '1px 5px',
+    fontFamily: 'monospace',
     fontSize: 11,
+    color: '#22c55e',
+  },
+  spinner: {
+    width: 18,
+    height: 18,
+    border: '2px solid #2a2a2a',
+    borderTop: '2px solid #22c55e',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+  },
+  runBtnSecondary: {
+    marginTop: 2,
+    background: 'transparent',
+    border: '1px solid #2a2a2a',
+    color: '#555',
+    padding: '5px 14px',
+    borderRadius: 6,
+    fontSize: 10,
     cursor: 'pointer',
     fontFamily: 'monospace',
   },

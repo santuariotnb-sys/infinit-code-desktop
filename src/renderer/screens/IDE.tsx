@@ -133,6 +133,8 @@ export default function IDE() {
         ::-webkit-scrollbar-track { background: transparent; }
         [data-resize]:hover { background: rgba(60,176,67,0.35) !important; }
         [data-resize]:active { background: rgba(60,176,67,0.55) !important; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
       `}</style>
 
       <Toolbar
