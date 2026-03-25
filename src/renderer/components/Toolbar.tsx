@@ -53,6 +53,9 @@ export default function Toolbar({
   const userMenuRef = useRef<HTMLDivElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const gitHubMenuRef = useRef<HTMLDivElement>(null);
+  const projectPortalRef = useRef<HTMLDivElement>(null);
+  const gitHubPortalRef = useRef<HTMLDivElement>(null);
+  const userPortalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     window.api.auth.getSession().then((s) => {
@@ -62,9 +65,10 @@ export default function Toolbar({
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setShowUserMenu(false);
-      if (projectMenuRef.current && !projectMenuRef.current.contains(e.target as Node)) setShowProjectMenu(false);
-      if (gitHubMenuRef.current && !gitHubMenuRef.current.contains(e.target as Node)) setShowGitHubMenu(false);
+      const t = e.target as Node;
+      if (!userMenuRef.current?.contains(t) && !userPortalRef.current?.contains(t)) setShowUserMenu(false);
+      if (!projectMenuRef.current?.contains(t) && !projectPortalRef.current?.contains(t)) setShowProjectMenu(false);
+      if (!gitHubMenuRef.current?.contains(t) && !gitHubPortalRef.current?.contains(t)) setShowGitHubMenu(false);
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -99,6 +103,7 @@ export default function Toolbar({
   const sep: React.CSSProperties = { width: 1, height: 20, background: 'rgba(255,255,255,0.55)', margin: '0 2px', flexShrink: 0 };
 
   return (
+    <>
     <div style={styles.bar}>
       {/* Logo */}
       <div style={styles.logoBox} onClick={onOpenFolder} title="Abrir pasta">
@@ -190,7 +195,7 @@ export default function Toolbar({
       {/* Git badge — com menu quando GitHub conectado */}
       <div ref={gitHubMenuRef} style={{ position: 'relative', flexShrink: 0, // @ts-expect-error no-drag
         WebkitAppRegion: 'no-drag' }}>
-        <div
+        <button
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '4px 10px', borderRadius: 7,
@@ -199,6 +204,8 @@ export default function Toolbar({
             fontSize: 11, color: '#72757f', fontFamily: "'JetBrains Mono', monospace",
             cursor: 'pointer', transition: 'all .15s',
             border: isGitHubConnected ? '1px solid rgba(60,176,67,0.2)' : '1px solid transparent',
+            // @ts-expect-error electron no-drag
+            WebkitAppRegion: 'no-drag',
           }}
           onClick={() => {
             if (isGitHubConnected) {
@@ -226,7 +233,7 @@ export default function Toolbar({
               <path d="M1 2.5l3 3 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
             </svg>
           )}
-        </div>
+        </button>
       </div>
 
       {/* Voice button */}
@@ -319,7 +326,7 @@ export default function Toolbar({
     {/* Portals — renderizados fora da drag region */}
     {showProjectMenu && projectMenuPos && ReactDOM.createPortal(
       <div
-        ref={projectMenuRef}
+        ref={projectPortalRef}
         style={{ ...styles.dropMenu, position: 'fixed', top: projectMenuPos.top, left: projectMenuPos.left }}
       >
         <button style={styles.dropItem} onClick={() => { setShowProjectMenu(false); onOpenFolder(); }}>
@@ -336,7 +343,7 @@ export default function Toolbar({
 
     {showGitHubMenu && isGitHubConnected && gitHubMenuPos && ReactDOM.createPortal(
       <div
-        ref={gitHubMenuRef}
+        ref={gitHubPortalRef}
         style={{ ...styles.dropMenu, position: 'fixed', top: gitHubMenuPos.top, right: gitHubMenuPos.right, left: 'auto', minWidth: 180 }}
       >
         <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
@@ -347,9 +354,13 @@ export default function Toolbar({
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 6h10M6 1v10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
           Abrir painel Git
         </button>
+        <button style={styles.dropItem} onClick={() => { setShowGitHubMenu(false); onSwitchRepo?.(); }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M.5 2A1.5 1.5 0 0 1 2 .5h2.5L6 2H10A1.5 1.5 0 0 1 11.5 3.5v5A1.5 1.5 0 0 1 10 10H2A1.5 1.5 0 0 1 .5 8.5V2Z" stroke="currentColor" strokeWidth="1" fill="none"/></svg>
+          Trocar projeto
+        </button>
         <button style={styles.dropItem} onClick={() => { setShowGitHubMenu(false); onGitHubSwitchAccount?.(); }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.1" /><path d="M1 11c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" strokeWidth="1.1" fill="none" /></svg>
-          Trocar conta
+          Trocar conta GitHub
         </button>
         <button style={{ ...styles.dropItem, color: '#d44' }} onClick={() => { setShowGitHubMenu(false); onGitHubDisconnect?.(); }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M7.5 4.5L10 7m0 0L7.5 9.5M10 7H4M5 2H2.5A1.5 1.5 0 0 0 1 3.5v5A1.5 1.5 0 0 0 2.5 10H5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
@@ -361,7 +372,7 @@ export default function Toolbar({
 
     {showUserMenu && session && userMenuPos && ReactDOM.createPortal(
       <div
-        ref={userMenuRef}
+        ref={userPortalRef}
         style={{ ...styles.dropMenu, position: 'fixed', top: userMenuPos.top, right: userMenuPos.right, left: 'auto', minWidth: 140 }}
       >
         <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
@@ -376,6 +387,7 @@ export default function Toolbar({
       </div>,
       document.body
     )}
+    </>
   );
 }
 
