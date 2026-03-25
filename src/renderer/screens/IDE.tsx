@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 
 import FileTree from '../components/FileTree';
 import Editor from '../components/Editor';
@@ -51,9 +51,8 @@ export default function IDE() {
   const panels = usePanels();
   const fileManager = useFileManager();
   const { projectContext, isIndexing, reindex } = useProjectIndex(fileManager.projectPath, fileManager.files);
-  const terminal = useTerminal({
-    onPortDetected: () => panels.setShowPreview(true),
-  });
+  const handlePortDetected = useCallback(() => panels.setShowPreview(true), [panels.setShowPreview]);
+  const terminal = useTerminal({ onPortDetected: handlePortDetected });
   const [gitChangeCount, setGitChangeCount] = useState(0);
   const github = useGitHub({ onProjectOpen: fileManager.openProject });
 
@@ -70,7 +69,13 @@ export default function IDE() {
     setTimeout(() => setPreviewRefreshTrigger(n => n + 1), 2500);
     // 2º reload de segurança: após 5s (caso a primeira ainda pegue cache)
     setTimeout(() => setPreviewRefreshTrigger(n => n + 1), 5000);
+    // 3º reload: após 9s (projetos grandes com muitos arquivos alterados)
+    setTimeout(() => setPreviewRefreshTrigger(n => n + 1), 9000);
   };
+  const handlePreviewPathChange = useCallback((path: string, port: number | null) => {
+    setPreviewPage({ path, port });
+  }, []);
+
   type ChatTab = 'chat' | 'research' | 'agents';
   const [chatTab, setChatTab] = useState<ChatTab>('chat');
   const [showSettings, setShowSettings] = useState(false);
@@ -163,6 +168,7 @@ export default function IDE() {
         modified={fileManager.isModified}
         onSave={fileManager.handleSave}
         onOpenFolder={fileManager.handleOpenFolder}
+        onSwitchRepo={github.handleShowClone}
         onTogglePreview={panels.togglePreview}
         onToggleChat={panels.toggleChat}
         onToggleGit={panels.toggleGit}
@@ -179,6 +185,10 @@ export default function IDE() {
         isChatStreaming={isChatStreaming}
         onOpenPalette={() => setShowPalette(true)}
         onOpenSettings={() => setShowSettings(true)}
+        isGitHubConnected={github.ghStatus?.connected}
+        gitHubUser={github.ghStatus?.user}
+        onGitHubSwitchAccount={() => github.setShowAuthModal(true)}
+        onGitHubDisconnect={github.handleDisconnect}
       />
 
       <div style={styles.main}>
@@ -226,7 +236,12 @@ export default function IDE() {
                       <span style={{ fontSize: 13, color: '#8a8d96' }}>Escolha um repositório</span>
                     </div>
                     {github.isCloneLoading
-                      ? <p style={styles.noFileText}>Carregando repositórios...</p>
+                      ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                          <p style={styles.noFileText}>Clonando repositório...</p>
+                          <button style={styles.emptyBtn} onClick={github.handleCancelClone}>✕ Cancelar</button>
+                        </div>
+                      )
                       : github.cloneError
                         ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -283,7 +298,7 @@ export default function IDE() {
                       hasNodeModules={fileManager.hasNodeModules}
                       pkgManager={fileManager.pkgManager}
                       refreshTrigger={previewRefreshTrigger}
-                      onPathChange={(path, port) => setPreviewPage({ path, port })}
+                      onPathChange={handlePreviewPathChange}
                     />
                   </ErrorBoundary>
                 </div>
@@ -429,6 +444,59 @@ export default function IDE() {
         onConnected={github.handleAuthConnected}
       />
 
+      {/* Modal: Trocar Repositório — aparece quando projeto já está aberto */}
+      {github.isCloneMode && fileManager.projectPath && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 500,
+          background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+          onClick={(e) => { if (e.target === e.currentTarget) github.setIsCloneMode(false); }}
+        >
+          <div style={{
+            background: 'rgba(235,237,242,0.97)', borderRadius: 14,
+            boxShadow: '0 2px 0 rgba(255,255,255,0.9) inset, 0 24px 64px rgba(0,0,0,0.28)',
+            border: '1px solid rgba(255,255,255,0.6)',
+            width: 380, maxHeight: '70vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1c20', fontFamily: '-apple-system, sans-serif' }}>Trocar Repositório</span>
+              <button onClick={() => github.setIsCloneMode(false)} style={{ background: 'rgba(0,0,0,0.06)', border: 'none', borderRadius: 6, width: 24, height: 24, cursor: 'pointer', color: '#666', fontSize: 12 }}>✕</button>
+            </div>
+            {/* Content */}
+            <div style={{ padding: '12px 16px', flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button style={{ ...styles.emptyBtnPrimary, width: '100%', justifyContent: 'flex-start' }} onClick={() => { github.setIsCloneMode(false); fileManager.handleOpenFolder(); }}>
+                <svg width="14" height="12" viewBox="0 0 12 10" fill="none"><path d="M.5 2A1.5 1.5 0 0 1 2 .5h2.5L6 2H10A1.5 1.5 0 0 1 11.5 3.5v5A1.5 1.5 0 0 1 10 10H2A1.5 1.5 0 0 1 .5 8.5V2Z" stroke="#3CB043" strokeWidth="1" fill="none"/></svg>
+                Abrir pasta local
+              </button>
+              {github.isCloneLoading ? (
+                <div style={{ textAlign: 'center', padding: '20px 0', color: '#888', fontSize: 13, fontFamily: '-apple-system, sans-serif' }}>
+                  {github.cloneRepos.length === 0 ? 'Carregando repositórios...' : 'Clonando...'}
+                </div>
+              ) : github.cloneError ? (
+                <div style={{ color: '#d04040', fontSize: 12, fontFamily: '-apple-system, sans-serif' }}>
+                  Erro: {github.cloneError}
+                  <br /><button style={{ marginTop: 8, ...styles.emptyBtn, width: '100%' }} onClick={github.handleShowClone}>↺ Tentar novamente</button>
+                </div>
+              ) : github.cloneRepos.length > 0 ? (
+                <>
+                  <div style={{ fontSize: 10, color: '#999', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>Seus repositórios</div>
+                  {github.cloneRepos.map((r, i) => (
+                    <button key={i} style={styles.emptyBtnRepo} onClick={() => github.handleCloneRepo(r)}>
+                      {String(r.fullName)}
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <div style={{ color: '#999', fontSize: 13, textAlign: 'center', padding: '12px 0', fontFamily: '-apple-system, sans-serif' }}>Nenhum repositório encontrado.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Status bar */}
       <div style={styles.statusBar}>
         <span style={styles.sbItem}>Infinit Code</span>
@@ -448,7 +516,13 @@ export default function IDE() {
           </>
         )}
         {fileName && <span style={styles.sbItem}>{fileName}</span>}
-        {fileManager.isModified && (
+        {fileManager.isSaving && (
+          <>
+            <span style={styles.sbSep} />
+            <span style={{ ...styles.sbItem, opacity: 0.7 }}>salvando...</span>
+          </>
+        )}
+        {!fileManager.isSaving && fileManager.isModified && (
           <>
             <span style={styles.sbSep} />
             <span style={styles.sbItem}>●</span>

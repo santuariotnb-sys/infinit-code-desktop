@@ -1,27 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { detectPort } from '../lib/portDetect';
 
 interface UseTerminalOptions {
   onPortDetected?: (port: number) => void;
-}
-
-const SERVER_REGEXES = [
-  /(?:localhost|127\.0\.0\.1|\[::1\]):(\d{4,5})/,
-  /Local:\s+https?:\/\/(?:localhost|127\.0\.0\.1):(\d{4,5})/i,
-  /https?:\/\/localhost:(\d{4,5})/i,
-  /(?:started|listening|running|available|serving).*?port[:\s]+(\d{4,5})/i,
-  /\bon port[:\s]+(\d{4,5})/i,
-  /\bport\s+(\d{4,5})\b/i,
-];
-
-function detectPort(data: string): number | null {
-  for (const re of SERVER_REGEXES) {
-    const m = data.match(re);
-    if (m) {
-      const port = parseInt(m[1], 10);
-      if (port >= 1024 && port <= 65535) return port;
-    }
-  }
-  return null;
 }
 
 export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
@@ -33,6 +14,11 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
   const outputRef = useRef('');
   const ghostRef = useRef('');
   const detectedPortRef = useRef<number | null>(null);
+  const onPortDetectedRef = useRef(onPortDetected);
+  const ghostOpInProgress = useRef(false);
+
+  // Mantém callback sempre atualizado sem recriar o effect
+  onPortDetectedRef.current = onPortDetected;
 
   // ── Terminal visível do usuário ──────────────────────────────────────────
   useEffect(() => {
@@ -62,7 +48,7 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
       if (port && port !== detectedPortRef.current) {
         detectedPortRef.current = port;
         setDetectedPort(port);
-        onPortDetected?.(port);
+        onPortDetectedRef.current?.(port);
       }
     });
 
@@ -87,22 +73,27 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
     window.api.terminal.write(text);
   }
 
-  function runDevServer(pkgManager = 'npm', cwd?: string) {
+  async function runDevServer(pkgManager = 'npm', cwd?: string) {
     const cmd =
       pkgManager === 'bun'  ? 'bun dev' :
       pkgManager === 'pnpm' ? 'pnpm run dev' :
       pkgManager === 'yarn' ? 'yarn dev' : 'npm run dev';
 
     if (cwd) {
-      // Mata ghost anterior e cria um novo no cwd do projeto
-      window.api.terminal.ghost.kill().then(() => {
+      // Evita race condition: ignora chamada se outra operação ghost está em andamento
+      if (ghostOpInProgress.current) return;
+      ghostOpInProgress.current = true;
+      try {
+        await window.api.terminal.ghost.kill();
         ghostRef.current = '';
         setGhostOutput('');
         detectedPortRef.current = null;
-        window.api.terminal.ghost.create(cwd).then(() => {
-          window.api.terminal.ghost.write(cmd + '\r');
-        });
-      });
+        setDetectedPort(null);
+        await window.api.terminal.ghost.create(cwd);
+        window.api.terminal.ghost.write(cmd + '\r');
+      } finally {
+        ghostOpInProgress.current = false;
+      }
     } else {
       // Fallback: roda no terminal principal (sem cwd = projeto já no cwd do PTY)
       window.api.terminal.write(cmd + '\r');

@@ -62,6 +62,7 @@ function httpsPost(opts: https.RequestOptions, body: string): Promise<string> {
 
 const fsWatchers = new Map<string, fs.FSWatcher>();
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let activeCloneProcess: ReturnType<typeof spawn> | null = null;
 
 function safeSend(win: BrowserWindow, channel: string, payload: unknown) {
   if (!win.isDestroyed()) win.webContents.send(channel, payload);
@@ -198,6 +199,16 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
       if (destPath.includes('..')) {
         return { ok: false, error: 'Caminho inválido.' };
       }
+      // Verifica se o diretório pai contém symlinks que apontam fora do home
+      const parentDir = path.dirname(resolvedDest);
+      if (fs.existsSync(parentDir)) {
+        try {
+          const realParent = fs.realpathSync(parentDir);
+          if (!realParent.startsWith(homeDir + path.sep) && realParent !== homeDir) {
+            return { ok: false, error: 'Caminho inválido: contém symlink para fora do diretório home.' };
+          }
+        } catch { /* parent não acessível */ }
+      }
 
       const token = getToken();
       if (token) {
@@ -212,11 +223,16 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
         execSync('git config --global credential.helper store', { timeout: 5000 });
       }
       const cloneUrl = repo.startsWith('http') ? repo : `https://github.com/${repo}.git`;
-      return new Promise<{ ok: boolean; path?: string; error?: string }>((resolve) => {
-        const proc = spawn('git', ['clone', cloneUrl, resolvedDest]);
+      return new Promise<{ ok: boolean; path?: string; error?: string; cancelled?: boolean }>((resolve) => {
+        const proc = spawn('git', ['clone', '--progress', cloneUrl, resolvedDest]);
+        activeCloneProcess = proc;
         proc.stdout?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
         proc.stderr?.on('data', (d: Buffer) => safeSend(mainWindow, 'github:sync-progress', { msg: d.toString().trim() }));
-        proc.on('close', (code) => code === 0 ? resolve({ ok: true, path: resolvedDest }) : resolve({ ok: false, error: `Exit ${code}` }));
+        proc.on('close', (code, signal) => {
+          activeCloneProcess = null;
+          if (signal === 'SIGTERM') return resolve({ ok: false, cancelled: true, error: 'Clone cancelado.' });
+          code === 0 ? resolve({ ok: true, path: resolvedDest }) : resolve({ ok: false, error: `Exit ${code}` });
+        });
       });
     } catch (e) {
       return { ok: false, error: String(e) };
@@ -402,5 +418,14 @@ export function registerGithubHandlers(mainWindow: BrowserWindow): void {
     } catch {
       return { ok: false };
     }
+  });
+
+  ipcMain.handle('github:cancel-clone', () => {
+    if (activeCloneProcess) {
+      try { activeCloneProcess.kill('SIGTERM'); } catch { /* já morto */ }
+      activeCloneProcess = null;
+      return { ok: true };
+    }
+    return { ok: false };
   });
 }

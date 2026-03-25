@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { SERVER_REGEXES } from '../lib/portDetect';
 
 type ViewportSize = 'mobile' | 'tablet' | 'desktop';
 
@@ -7,24 +8,6 @@ const VIEWPORT_WIDTH: Record<ViewportSize, string> = {
   tablet: '768px',
   desktop: '100%',
 };
-
-const SERVER_REGEXES = [
-  /(?:localhost|127\.0\.0\.1|\[::1\]):(\d{4,5})/,
-  /Local:\s+https?:\/\/(?:localhost|127\.0\.0\.1):(\d{4,5})/i,
-  /https?:\/\/localhost:(\d{4,5})/i,
-  /Server listening at.*?:(\d{4,5})/i,
-  /started at.*?:(\d{4,5})/i,
-  /ready (?:on|started server on).*?:(\d{4,5})/i,
-  /(?:started|listening|running|available|serving).*?port[:\s]+(\d{4,5})/i,
-  /\bon port[:\s]+(\d{4,5})/i,
-  /:\s*(\d{4,5})\s*(?:→|->|\()/,
-  /App running at.*?:(\d{4,5})/i,
-  /Network:.*?:(\d{4,5})/i,
-  /running on https?:\/\/[^:]+:(\d{4,5})/i,
-  /Development Server started.*?:(\d{4,5})/i,
-  /application successfully started.*?:(\d{4,5})/i,
-  /\bport\s+(\d{4,5})\b/i,
-];
 
 // HMR puro → Vite atualiza via WebSocket, não precisa de ação
 const HMR_REGEXES = [/HMR/, /Fast Refresh/, /hot update/i];

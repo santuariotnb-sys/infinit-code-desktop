@@ -2,6 +2,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { FILE_LIMITS } from '../constants';
 
 interface FileNode {
   name: string;
@@ -16,13 +17,40 @@ const IGNORE_LIST = new Set([
   'coverage', '.nyc_output',
 ]);
 
+const MAX_FILE_SIZE = FILE_LIMITS.MAX_READ_BYTES;
+
+const BINARY_EXTENSIONS = new Set([
+  'png','jpg','jpeg','gif','webp','bmp','ico','svg',
+  'mp4','mp3','wav','ogg','webm','avi','mov','mkv',
+  'zip','tar','gz','rar','7z','bz2',
+  'pdf','doc','docx','xls','xlsx','ppt','pptx',
+  'exe','dll','so','dylib','bin','wasm',
+  'ttf','otf','woff','woff2','eot',
+  'db','sqlite','sqlite3',
+]);
+
+function isBinaryPath(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase().replace('.', '');
+  return BINARY_EXTENSIONS.has(ext);
+}
+
 let watcher: fs.FSWatcher | null = null;
 let debounceTimer: NodeJS.Timeout | null = null;
 
-function readDirRecursive(dirPath: string, depth: number = 0, maxDepth: number = 3): FileNode[] {
+function readDirRecursive(
+  dirPath: string,
+  depth: number = 0,
+  maxDepth: number = FILE_LIMITS.DIR_MAX_DEPTH,
+  visitedInodes: Set<number> = new Set(),
+): FileNode[] {
   if (depth >= maxDepth) return [];
 
   try {
+    // Guarda inode para detectar symlink loops
+    const dirStat = fs.statSync(dirPath);
+    if (visitedInodes.has(dirStat.ino)) return [];
+    visitedInodes.add(dirStat.ino);
+
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
     const result: FileNode[] = [];
 
@@ -41,7 +69,7 @@ function readDirRecursive(dirPath: string, depth: number = 0, maxDepth: number =
           name: entry.name,
           path: fullPath,
           type: 'folder',
-          children: readDirRecursive(fullPath, depth + 1, maxDepth),
+          children: readDirRecursive(fullPath, depth + 1, maxDepth, visitedInodes),
         });
       } else {
         result.push({
@@ -95,6 +123,14 @@ export function registerFileHandlers(mainWindow: BrowserWindow): void {
     try {
       if (!isPathSafe(filePath)) {
         return { ok: false, error: 'Acesso negado a este caminho' };
+      }
+      if (isBinaryPath(filePath)) {
+        return { ok: false, error: 'Arquivo binário não pode ser aberto no editor', isBinary: true };
+      }
+      const stat = await fs.promises.stat(filePath);
+      if (stat.size > MAX_FILE_SIZE) {
+        const sizeMB = (stat.size / 1024 / 1024).toFixed(1);
+        return { ok: false, error: `Arquivo muito grande (${sizeMB} MB). Limite: 10 MB`, isTooLarge: true };
       }
       const data = await fs.promises.readFile(filePath, 'utf-8');
       return { ok: true, data };
@@ -159,6 +195,7 @@ export function registerFileHandlers(mainWindow: BrowserWindow): void {
   });
 
   ipcMain.handle('file:watch', (_event, dirPath: string) => {
+    if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
     if (watcher) {
       watcher.close();
       watcher = null;
@@ -175,7 +212,7 @@ export function registerFileHandlers(mainWindow: BrowserWindow): void {
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('file:changed', fullPath);
           }
-        }, 300);
+        }, FILE_LIMITS.WATCHER_DEBOUNCE_MS);
       });
     } catch {
       // directory may not exist yet

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { TERMINAL } from '../lib/constants';
 import { Terminal as XTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -57,12 +58,16 @@ export default function Terminal() {
     fitAddonRef.current = fitAddon;
 
     // Cria PTY — idempotente, só cria se não existe
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let mounted = true;
+
     const createPty = () => {
       window.api.terminal.create().then(() => {
+        if (!mounted) return;
         try { fitAddon.fit(); } catch { /* ignore */ }
       }).catch(() => {
-        // Tenta novamente após 1s se falhar
-        setTimeout(createPty, 1000);
+        if (!mounted) return;
+        retryTimer = setTimeout(createPty, TERMINAL.PTY_RETRY_DELAY_MS);
       });
     };
     createPty();
@@ -102,11 +107,13 @@ export default function Terminal() {
             window.api.terminal.resize(dims.cols, dims.rows);
           }
         } catch { /* ignore */ }
-      }, 60);
+      }, TERMINAL.RESIZE_DEBOUNCE_MS);
     });
     observer.observe(containerRef.current);
 
     return () => {
+      mounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
       cleanupData();
       cleanupExit();
       if (resizeTimer) clearTimeout(resizeTimer);

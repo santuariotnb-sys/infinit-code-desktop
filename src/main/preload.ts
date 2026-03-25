@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.removeListener('github:device-flow-progress', handler);
     },
     clone: (repo: string, dest: string) => ipcRenderer.invoke('github:clone', repo, dest),
+    cancelClone: () => ipcRenderer.invoke('github:cancel-clone'),
     listRepos: () => ipcRenderer.invoke('github:list-repos'),
     gitStatus: (cwd: string) => ipcRenderer.invoke('github:git-status', cwd),
     commit: (cwd: string, message: string) => ipcRenderer.invoke('github:commit', cwd, message),

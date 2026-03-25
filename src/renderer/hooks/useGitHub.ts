@@ -71,19 +71,41 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
 
   async function handleCloneRepo(repo: GitRepo) {
     setIsCloneLoading(true);
+    setCloneError(null);
     try {
       const home = await window.api.files.getHome();
       const repoName = String(repo.name);
       const dest = `${home}/${repoName}`;
       const cloneUrl = `https://github.com/${String(repo.fullName)}.git`;
-      await window.api.github.clone(cloneUrl, dest);
+      const result = await window.api.github.clone(cloneUrl, dest);
+      if (result?.cancelled) {
+        setIsCloneMode(false);
+        return;
+      }
+      if (!result?.ok) {
+        setCloneError(result?.error || 'Falha ao clonar repositório.');
+        return;
+      }
       setIsCloneMode(false);
       onProjectOpen(dest);
     } catch (error) {
-      console.error('[useGitHub] clone falhou:', error);
+      setCloneError(String(error));
     } finally {
       setIsCloneLoading(false);
     }
+  }
+
+  function handleCancelClone() {
+    window.api.github.cancelClone?.();
+    setIsCloneLoading(false);
+    setIsCloneMode(false);
+  }
+
+  async function handleDisconnect() {
+    try {
+      await window.api.github.disconnect();
+    } catch { /* ignora */ }
+    setGhStatus({ connected: false });
   }
 
   return {
@@ -98,6 +120,8 @@ export function useGitHub({ onProjectOpen }: UseGitHubOptions) {
     handleConnectGitHub,
     handleShowClone,
     handleCloneRepo,
+    handleCancelClone,
     handleAuthConnected,
+    handleDisconnect,
   };
 }

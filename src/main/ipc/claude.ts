@@ -3,21 +3,13 @@ import { execSync, exec, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { TIMEOUTS, CLAUDE_SEARCH_PATHS } from '../constants';
 
 // Guarda session_id por janela para memória contínua
 const sessions = new Map<number, string>();
 
 // Guarda processo ativo por janela (para cancelamento)
 const activeProcesses = new Map<number, ReturnType<typeof spawn>>();
-
-// ── Caminhos do binário Claude Code CLI ─────────────────────
-const CLAUDE_SEARCH_PATHS = [
-  path.join(os.homedir(), '.local', 'bin', 'claude'),
-  '/usr/local/bin/claude',
-  '/opt/homebrew/bin/claude',
-  path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
-  '/usr/bin/claude',
-];
 
 function findClaudeBinary(): string {
   for (const p of CLAUDE_SEARCH_PATHS) {
@@ -59,7 +51,7 @@ export function registerClaudeHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('claude:check-installed', () => {
     try {
-      const version = execSync(`"${CLAUDE_BIN}" --version`, { encoding: 'utf-8', timeout: 5000, env: RICH_ENV }).trim();
+      const version = execSync(`"${CLAUDE_BIN}" --version`, { encoding: 'utf-8', timeout: TIMEOUTS.CLI_SHORT_MS, env: RICH_ENV }).trim();
       return { installed: true, version };
     } catch {
       return { installed: false };
@@ -126,13 +118,20 @@ export function registerClaudeHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('claude:open-auth', () => {
     shell.openExternal('https://claude.ai/login');
 
-    // Watch for auth file changes
     const authDir = path.join(os.homedir(), '.claude');
     const configPath = path.join(os.homedir(), '.claude.json');
     let resolved = false;
-    const timeout = setTimeout(() => {
+    let nextCheckTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const stopPolling = () => {
       resolved = true;
-    }, 300000); // 5 min timeout
+      if (nextCheckTimer) { clearTimeout(nextCheckTimer); nextCheckTimer = null; }
+    };
+
+    // Para polling se janela fechar — evita timer leak
+    mainWindow.once('closed', stopPolling);
+
+    const globalTimeout = setTimeout(stopPolling, TIMEOUTS.CLAUDE_AUTH_POLL_MAX_MS);
 
     const checkAuth = () => {
       if (resolved) return;
@@ -144,9 +143,9 @@ export function registerClaudeHandlers(mainWindow: BrowserWindow): void {
             : JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
           if (authData.oauthAccount || authData.claudeAiOauth || authData.email) {
-            resolved = true;
-            clearTimeout(timeout);
-            if (mainWindow && !mainWindow.isDestroyed()) {
+            clearTimeout(globalTimeout);
+            stopPolling();
+            if (!mainWindow.isDestroyed()) {
               mainWindow.webContents.send('claude:authenticated');
             }
             return;
@@ -154,11 +153,11 @@ export function registerClaudeHandlers(mainWindow: BrowserWindow): void {
         }
       } catch { /* ignore */ }
       if (!resolved) {
-        setTimeout(checkAuth, 3000);
+        nextCheckTimer = setTimeout(checkAuth, TIMEOUTS.CLAUDE_AUTH_POLL_INTERVAL_MS);
       }
     };
 
-    setTimeout(checkAuth, 5000);
+    nextCheckTimer = setTimeout(checkAuth, TIMEOUTS.CLAUDE_AUTH_POLL_DELAY_MS);
   });
 
   ipcMain.handle('claude:install-skills', () => {
@@ -270,7 +269,7 @@ Ao revisar e escrever código:
   // ── Voice status ─────────────────────────────────────────
   ipcMain.handle('claude:voice-status', () => {
     try {
-      const versionRaw = execSync(`"${CLAUDE_BIN}" --version`, { encoding: 'utf-8', timeout: 5000, env: RICH_ENV }).trim();
+      const versionRaw = execSync(`"${CLAUDE_BIN}" --version`, { encoding: 'utf-8', timeout: TIMEOUTS.CLI_SHORT_MS, env: RICH_ENV }).trim();
       const match = versionRaw.match(/(\d+)\.(\d+)\.(\d+)/);
       if (!match) return { supported: false, version: versionRaw };
       const [, major, minor, patch] = match.map(Number);
@@ -318,6 +317,14 @@ Ao revisar e escrever código:
   }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const winId = win?.id ?? 0;
+
+    // Cancela request anterior se ainda estiver ativo — evita race condition de sessão
+    const existingProc = activeProcesses.get(winId);
+    if (existingProc) {
+      try { existingProc.kill('SIGTERM'); } catch { /* já morto */ }
+      activeProcesses.delete(winId);
+    }
+
     const existingSession = payload.sessionId ?? sessions.get(winId);
 
     const args = [
@@ -337,20 +344,20 @@ Ao revisar e escrever código:
       let totalCost = 0;
       const chunks: object[] = [];
 
+      const sendToWindow = (channel: string, data: unknown) => {
+        if (win && !win.isDestroyed()) win.webContents.send(channel, data);
+      };
+
       const warningTimer = setTimeout(() => {
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('claude:error', { message: 'Claude está demorando mais de 1 minuto...' });
-        }
-      }, 60_000);
+        sendToWindow('claude:error', { message: 'Claude está demorando mais de 1 minuto...' });
+      }, TIMEOUTS.CLAUDE_WARNING_MS);
 
       const timeout = setTimeout(() => {
         clearTimeout(warningTimer);
         proc.kill('SIGTERM');
-        if (!mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('claude:error', { message: 'Timeout: Claude demorou mais de 5 minutos. Tente novamente.' });
-        }
+        sendToWindow('claude:error', { message: 'Timeout: Claude demorou mais de 5 minutos. Tente novamente.' });
         reject(new Error('Timeout: Claude demorou mais de 5 minutos'));
-      }, 300_000);
+      }, TIMEOUTS.CLAUDE_MAX_MS);
 
       let stdoutBuffer = '';
       proc.stdout.on('data', (data: Buffer) => {
@@ -370,10 +377,10 @@ Ao revisar e escrever código:
             if (json.type === 'assistant' && Array.isArray(json.message?.content)) {
               for (const block of json.message.content) {
                 if (block.type === 'text' && block.text) {
-                  event.sender.send('claude:chunk', { text: block.text });
+                  sendToWindow('claude:chunk', { text: block.text });
                 }
                 if (block.type === 'tool_use' && block.name) {
-                  event.sender.send('claude:tool', { name: block.name, input: block.input });
+                  sendToWindow('claude:tool', { name: block.name, input: block.input });
                 }
               }
             }
@@ -384,7 +391,7 @@ Ao revisar e escrever código:
       proc.stderr.on('data', (data: Buffer) => {
         const text = data.toString();
         if (text.toLowerCase().includes('error')) {
-          event.sender.send('claude:error', { message: text.trim() });
+          sendToWindow('claude:error', { message: text.trim() });
         }
       });
 
@@ -402,7 +409,7 @@ Ao revisar e escrever código:
         activeProcesses.delete(winId);
         reject(new Error(
           (err as NodeJS.ErrnoException).code === 'ENOENT'
-            ? `Claude Code CLI não encontrado em "${CLAUDE_BIN}". Execute: npm install -g @anthropic-ai/claude-code`
+            ? `Claude Code CLI não encontrado em "${CLAUDE_BIN}".\nPATH atual: ${RICH_ENV.PATH}\nExecute: npm install -g @anthropic-ai/claude-code`
             : err.message
         ));
       });

@@ -1,3 +1,14 @@
+/**
+ * Resultado discriminado para respostas IPC.
+ * Permite narrowing seguro:
+ *   if (result.ok) { result.data }   // TypeScript sabe que data existe
+ *   else { result.error }            // TypeScript sabe que error existe
+ */
+type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+
+/** Resultado simples sem payload */
+type OkResult = { ok: true } | { ok: false; error: string };
+
 interface FileNode {
   name: string;
   path: string;
@@ -23,7 +34,7 @@ interface ElectronAPI {
     };
   };
   files: {
-    read: (filePath: string) => Promise<{ ok: boolean; data?: string; error?: string }>;
+    read: (filePath: string) => Promise<{ ok: boolean; data?: string; error?: string; isBinary?: boolean; isTooLarge?: boolean }>;
     write: (filePath: string, content: string) => Promise<{ ok: boolean; error?: string }>;
     readDir: (dirPath: string) => Promise<{ ok: boolean; data?: FileNode[]; error?: string }>;
     openDialog: () => Promise<string | null>;
@@ -65,7 +76,8 @@ interface ElectronAPI {
     commit?: (cwd: string, message: string) => Promise<{ ok: boolean; error?: string }>;
     disconnect: () => Promise<{ ok: boolean }>;
     onDeviceFlowProgress?: (cb: () => void) => () => void;
-    clone: (repo: string, dest: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
+    clone: (repo: string, dest: string) => Promise<{ ok: boolean; path?: string; error?: string; cancelled?: boolean }>;
+    cancelClone: () => Promise<{ ok: boolean }>;
     listRepos: () => Promise<{ repos: RepoInfo[]; error?: string }>;
     gitStatus: (cwd: string) => Promise<{ isRepo: boolean; branch: string; changes: GitChange[] }>;
     sync: (cwd: string, branch: string) => Promise<{ pushed: boolean; conflicts: boolean; log: string }>;

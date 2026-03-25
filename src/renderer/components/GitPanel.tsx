@@ -26,6 +26,7 @@ export default function GitPanel({ projectPath, onSyncProgress, onSyncDone, open
   const [commitMsg, setCommitMsg] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [showBranchInput, setShowBranchInput] = useState(false);
+  const [branchError, setBranchError] = useState('');
 
   const { branch, setBranch, branches, changes, localChangeCount, refreshStatus } = useGitStatus(projectPath);
   const ops = useGitOperations({ projectPath, branch, onProgress: onSyncProgress, onRefresh: refreshStatus, onSyncDone });
@@ -88,16 +89,31 @@ export default function GitPanel({ projectPath, onSyncProgress, onSyncDone, open
 
       {showBranchInput && (
         <div style={{ ...styles.branchRow, padding: '4px 12px' }}>
-          <input
-            style={styles.branchInput}
-            value={newBranchName}
-            onChange={(e) => setNewBranchName(e.target.value)}
-            placeholder="nome-da-branch"
-            onKeyDown={(e) => e.key === 'Enter' && ops.handleCreateBranch(newBranchName, () => { setNewBranchName(''); setShowBranchInput(false); })}
-          />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <input
+              style={{ ...styles.branchInput, borderColor: branchError ? 'rgba(217,48,48,0.4)' : 'rgba(255,255,255,0.5)' }}
+              value={newBranchName}
+              onChange={(e) => { setNewBranchName(e.target.value); setBranchError(''); }}
+              placeholder="nome-da-branch"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const name = newBranchName.trim().replace(/\s+/g, '-');
+                  if (!name) { setBranchError('Nome obrigatório'); return; }
+                  if (/[~^:?*\[\\]/.test(name)) { setBranchError('Caracteres inválidos'); return; }
+                  ops.handleCreateBranch(name, () => { setNewBranchName(''); setShowBranchInput(false); setBranchError(''); });
+                }
+              }}
+            />
+            {branchError && <span style={{ fontSize: 10, color: '#d93030', fontFamily: 'monospace' }}>{branchError}</span>}
+          </div>
           <button
             style={styles.smallBtn}
-            onClick={() => ops.handleCreateBranch(newBranchName, () => { setNewBranchName(''); setShowBranchInput(false); })}
+            onClick={() => {
+              const name = newBranchName.trim().replace(/\s+/g, '-');
+              if (!name) { setBranchError('Nome obrigatório'); return; }
+              if (/[~^:?*\[\\]/.test(name)) { setBranchError('Caracteres inválidos'); return; }
+              ops.handleCreateBranch(name, () => { setNewBranchName(''); setShowBranchInput(false); setBranchError(''); });
+            }}
           >✓</button>
         </div>
       )}
@@ -133,7 +149,7 @@ export default function GitPanel({ projectPath, onSyncProgress, onSyncDone, open
               <div style={styles.section}>
                 <div style={styles.sectionTitle}>Alterações ({changes.length})</div>
                 <div style={styles.fileList}>
-                  {changes.slice(0, 15).map((c, i) => {
+                  {changes.map((c, i) => {
                     const badge = STATUS_BADGE[c.status] || { label: c.status, color: '#888' };
                     return (
                       <div key={i} style={styles.fileItem}>
@@ -151,9 +167,6 @@ export default function GitPanel({ projectPath, onSyncProgress, onSyncDone, open
                       </div>
                     );
                   })}
-                  {changes.length > 15 && (
-                    <div style={styles.moreFiles}>+{changes.length - 15} mais arquivos</div>
-                  )}
                 </div>
               </div>
             )}
@@ -366,7 +379,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     border: '1px solid rgba(255,255,255,0.5)',
     overflow: 'hidden',
-    maxHeight: 160,
+    maxHeight: 240,
     overflowY: 'auto',
   },
   fileItem: {

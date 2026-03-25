@@ -77,8 +77,9 @@ export function findRelevantPaths(
   const STOP = new Set([
     'fazer', 'criar', 'quero', 'para', 'como', 'esse', 'essa', 'isto', 'isso', 'mais',
     'menos', 'quando', 'onde', 'qual', 'sendo', 'pelo', 'pela', 'numa', 'with', 'that',
-    'this', 'from', 'have', 'will', 'would', 'could', 'should', 'page', 'file', 'component',
-    'arquivo', 'componente', 'pagina', 'função', 'function',
+    'this', 'from', 'have', 'will', 'would', 'could', 'should',
+    // Removidos: 'page', 'file', 'component', 'arquivo', 'componente', 'pagina', 'função', 'function'
+    // pois são sufixos válidos de nomes de arquivo (ex: CheckoutPage, useFunction, UserComponent)
   ]);
 
   const words = (msgLower.match(/\b[\w-]{4,}\b/g) || []).filter(w => !STOP.has(w));

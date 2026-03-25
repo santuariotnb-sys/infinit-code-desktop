@@ -228,6 +228,18 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
           <span style={{ fontSize: 9, color: '#f0a020', fontFamily: 'monospace' }}>indexando…</span>
         )}
         <button
+          onClick={() => setApprovalMode((prev) => prev === true ? false : true)}
+          style={{
+            background: approvalMode === true ? 'rgba(240,160,32,0.12)' : 'none',
+            border: approvalMode === true ? '1px solid rgba(240,160,32,0.3)' : '1px solid transparent',
+            color: approvalMode === true ? '#f0a020' : '#444',
+            borderRadius: 4, padding: '2px 6px', fontSize: 9,
+            cursor: 'pointer', fontFamily: 'monospace',
+            transition: 'all .15s',
+          }}
+          title={approvalMode === true ? 'Modo aprovação: ativo — Claude pede confirmação antes de cada fase' : 'Modo aprovação: inativo — Claude executa direto'}
+        >{approvalMode === true ? '✓ aprovação' : '⚡ direto'}</button>
+        <button
           onClick={() => setShowResults((v) => !v)}
           style={{ ...styles.clearBtn, color: showResults ? '#00ff88' : '#444', fontSize: 11 }}
           title={showResults ? 'Ocultar resultados' : 'Mostrar resultados'}

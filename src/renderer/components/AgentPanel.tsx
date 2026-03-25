@@ -80,6 +80,29 @@ export default function AgentPanel({ projectPath, activeFile, activeFileContent 
     setAgents((prev) => ({ ...prev, [role]: { ...prev[role], ...update } }));
   }, []);
 
+  async function runAgentPhase(
+    role: AgentRole,
+    prompt: string,
+    cwd: string,
+  ): Promise<{ ok: boolean; output: string; cost: number; sessionId: string | null }> {
+    // Streaming em tempo real: acumula chunks no card do agente
+    let streamText = '';
+    const removeChunk = window.api.claude.onChunk?.((data) => {
+      streamText += data.text;
+      patch(role, { output: streamText });
+    }) ?? (() => {});
+
+    try {
+      const res = await window.api.claude.ask({ prompt, cwd });
+      const finalOut = extractResult(res.chunks) || streamText || '(sem saída)';
+      return { ok: true, output: finalOut, cost: res.cost_usd ?? 0, sessionId: res.sessionId ?? null };
+    } catch (err) {
+      return { ok: false, output: String(err), cost: 0, sessionId: null };
+    } finally {
+      removeChunk();
+    }
+  }
+
   async function runAgents() {
     if (!task.trim() || running || !window.api.claude.ask) return;
     setRunning(true);
@@ -98,48 +121,46 @@ export default function AgentPanel({ projectPath, activeFile, activeFileContent 
     );
 
     // ── FASE 1: Planner ──────────────────────────────────────────
-    patch('planner', { status: 'running' });
-    let plan = '';
-    try {
-      const res = await window.api.claude.ask({
-        prompt: `${AGENTS.planner.prompt}${skillCtx}\n\nProjeto: ${cwd}${fileCtx}\n\nTarefa: ${task}`,
-        cwd,
-      });
-      plan = extractResult(res.chunks);
-      patch('planner', { status: 'done', output: plan || '(sem saída)', cost: res.cost_usd, sessionId: res.sessionId });
-    } catch (err) {
-      patch('planner', { status: 'error', output: String(err) });
+    patch('planner', { status: 'running', output: '' });
+    const planResult = await runAgentPhase(
+      'planner',
+      `${AGENTS.planner.prompt}${skillCtx}\n\nProjeto: ${cwd}${fileCtx}\n\nTarefa: ${task}`,
+      cwd,
+    );
+    if (!planResult.ok) {
+      patch('planner', { status: 'error', output: planResult.output });
       setRunning(false);
       return;
     }
+    patch('planner', { status: 'done', output: planResult.output, cost: planResult.cost, sessionId: planResult.sessionId });
 
     // ── FASE 2: Builder ──────────────────────────────────────────
-    patch('builder', { status: 'running' });
-    try {
-      const res = await window.api.claude.ask({
-        prompt: `${AGENTS.builder.prompt}${skillCtx}\n\nProjeto: ${cwd}${fileCtx}\n\nPlano aprovado:\n${plan}\n\nImplementa agora.`,
-        cwd,
-      });
-      const out = extractResult(res.chunks);
-      patch('builder', { status: 'done', output: out || 'Implementação concluída.', cost: res.cost_usd, sessionId: res.sessionId });
-    } catch (err) {
-      patch('builder', { status: 'error', output: String(err) });
+    patch('builder', { status: 'running', output: '' });
+    const buildResult = await runAgentPhase(
+      'builder',
+      `${AGENTS.builder.prompt}${skillCtx}\n\nProjeto: ${cwd}${fileCtx}\n\nPlano aprovado:\n${planResult.output}\n\nImplementa agora.`,
+      cwd,
+    );
+    if (!buildResult.ok) {
+      patch('builder', { status: 'error', output: buildResult.output });
       setRunning(false);
       return;
     }
+    patch('builder', { status: 'done', output: buildResult.output || 'Implementação concluída.', cost: buildResult.cost, sessionId: buildResult.sessionId });
 
     // ── FASE 3: Reviewer ─────────────────────────────────────────
-    patch('reviewer', { status: 'running' });
-    try {
-      const res = await window.api.claude.ask({
-        prompt: `${AGENTS.reviewer.prompt}${skillCtx}\n\nProjeto: ${cwd}${fileCtx}\n\nTarefa implementada: ${task}`,
-        cwd,
-      });
-      const out = extractResult(res.chunks);
-      patch('reviewer', { status: 'done', output: out || '✓ Aprovado.', cost: res.cost_usd, sessionId: res.sessionId });
-    } catch (err) {
-      patch('reviewer', { status: 'error', output: String(err) });
-    }
+    patch('reviewer', { status: 'running', output: '' });
+    const reviewResult = await runAgentPhase(
+      'reviewer',
+      `${AGENTS.reviewer.prompt}${skillCtx}\n\nProjeto: ${cwd}${fileCtx}\n\nTarefa implementada: ${task}`,
+      cwd,
+    );
+    patch('reviewer', {
+      status: reviewResult.ok ? 'done' : 'error',
+      output: reviewResult.output || '✓ Aprovado.',
+      cost: reviewResult.cost,
+      sessionId: reviewResult.sessionId,
+    });
 
     setRunning(false);
   }
@@ -250,7 +271,7 @@ export default function AgentPanel({ projectPath, activeFile, activeFileContent 
             >
               <div
                 style={s.cardHeader}
-                onClick={() => agent.output && setExpanded(isOpen ? null : role)}
+                onClick={() => (agent.output || agent.status === 'running') && setExpanded(isOpen ? null : role)}
               >
                 {/* Status circle */}
                 <div style={{
@@ -292,7 +313,7 @@ export default function AgentPanel({ projectPath, activeFile, activeFileContent 
                 )}
               </div>
 
-              {isOpen && agent.output && (
+              {(isOpen || agent.status === 'running') && agent.output && (
                 <div style={s.output}>{agent.output}</div>
               )}
             </div>
@@ -374,7 +395,7 @@ const s: Record<string, React.CSSProperties> = {
     lineHeight: 1.6,
     borderTop: '1px solid rgba(255,255,255,0.4)',
     whiteSpace: 'pre-wrap' as const,
-    maxHeight: 200,
+    maxHeight: 320,
     overflow: 'auto',
     background: 'rgba(255,255,255,0.4)',
     borderRadius: 8,

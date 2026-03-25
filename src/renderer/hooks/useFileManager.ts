@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { FILE_MANAGER } from '../lib/constants';
 
 interface FileNode {
   name: string;
@@ -29,10 +30,20 @@ export function useFileManager() {
   const [pkgManager, setPkgManager] = useState<PkgManager>('npm');
   const [hasNodeModules, setHasNodeModules] = useState<boolean | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   function showError(msg: string) {
     setFileError(msg);
     setTimeout(() => setFileError(null), 4000);
+  }
+
+  // Retorna set com todos os paths de arquivo da árvore atual (busca recursiva)
+  function flatFilePaths(nodes: FileNode[], out = new Set<string>()): Set<string> {
+    for (const n of nodes) {
+      if (n.type === 'file') out.add(n.path);
+      if (n.children) flatFilePaths(n.children, out);
+    }
+    return out;
   }
 
   // Ref para debounce do auto-save (1.5s após última digitação)
@@ -41,10 +52,12 @@ export function useFileManager() {
   const openFileRef = useRef<string | null>(null);
   const fileContentRef = useRef('');
   const isModifiedRef = useRef(false);
+  const filesRef = useRef<FileNode[]>([]);
 
   openFileRef.current = openFile;
   fileContentRef.current = fileContent;
   isModifiedRef.current = isModified;
+  filesRef.current = files;
 
   const loadFiles = useCallback(async (dir: string) => {
     const result = await window.api.files.readDir(dir);
@@ -64,7 +77,13 @@ export function useFileManager() {
     loadFiles(projectPath);
     window.api.terminal.write(`cd "${projectPath}"\r`);
     window.api.files.watch(projectPath);
-    const cleanupListener = window.api.files.onChanged(() => loadFiles(projectPath));
+    // Reload condicional: se arquivo já existe na árvore, só o conteúdo mudou (HMR cuida disso)
+    // Só recarrega a árvore se for um arquivo novo, deletado ou renomeado
+    const cleanupListener = window.api.files.onChanged((changedPath: string) => {
+      const known = flatFilePaths(filesRef.current);
+      const fileExists = known.has(changedPath);
+      if (!fileExists) loadFiles(projectPath);
+    });
     return () => {
       cleanupListener();
       window.api.files.unwatch();
@@ -121,12 +140,17 @@ export function useFileManager() {
     const path = openFileRef.current;
     const content = fileContentRef.current;
     if (path && isModifiedRef.current) {
-      const result = await window.api.files.write(path, content);
-      if (result?.ok) {
-        setIsModified(false);
-        isModifiedRef.current = false;
-      } else {
-        showError(`Erro ao salvar: ${result?.error || 'erro desconhecido'}`);
+      setIsSaving(true);
+      try {
+        const result = await window.api.files.write(path, content);
+        if (result?.ok) {
+          setIsModified(false);
+          isModifiedRef.current = false;
+        } else {
+          showError(`Erro ao salvar: ${result?.error || 'erro desconhecido'}`);
+        }
+      } finally {
+        setIsSaving(false);
       }
     }
   }
@@ -142,7 +166,7 @@ export function useFileManager() {
     // Isso garante que Vite sempre vê as mudanças → HMR ao vivo
     if (HMR_EXTENSIONS.test(openFileRef.current ?? '')) {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(() => handleSave(), 1500);
+      autoSaveTimer.current = setTimeout(() => handleSave(), FILE_MANAGER.AUTOSAVE_DEBOUNCE_MS);
     }
   }
 
@@ -159,6 +183,7 @@ export function useFileManager() {
     openFile,
     fileContent,
     isModified,
+    isSaving,
     openTabs,
     pkgManager,
     hasNodeModules,

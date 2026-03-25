@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 export interface Message {
   id: string;
@@ -13,8 +13,33 @@ export function useChatMessages() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [lastCost, setLastCost] = useState<number | null>(null);
   const streamingRef = useRef('');
+  const streamingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isStreaming = claudeStatus === 'thinking';
+
+  // Segurança: se streaming ficar travado por 10 minutos, finaliza automaticamente
+  useEffect(() => {
+    if (claudeStatus === 'thinking') {
+      streamingTimeoutRef.current = setTimeout(() => {
+        const finalText = streamingRef.current;
+        if (finalText) {
+          setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'assistant', content: finalText }]);
+        }
+        streamingRef.current = '';
+        setStreamingText('');
+        setClaudeStatus('ready');
+        setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'system', content: '⚠ Timeout: resposta interrompida após 10 minutos.' }]);
+      }, 600_000);
+    } else {
+      if (streamingTimeoutRef.current) {
+        clearTimeout(streamingTimeoutRef.current);
+        streamingTimeoutRef.current = null;
+      }
+    }
+    return () => {
+      if (streamingTimeoutRef.current) clearTimeout(streamingTimeoutRef.current);
+    };
+  }, [claudeStatus]);
 
   const addUserMessage = useCallback((content: string) => {
     setMessages((prev) => [...prev, { id: Date.now().toString(), role: 'user', content }]);
