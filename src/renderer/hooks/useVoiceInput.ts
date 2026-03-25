@@ -27,6 +27,13 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
     setVoiceError(null);
   }
 
+  // Chamado pelo MicPermissionModal quando o macOS concedeu o acesso
+  // Recebe o stream já aberto e inicia o reconhecimento
+  async function onPermissionGranted(stream: MediaStream) {
+    setNeedsPermission(false);
+    await startRecognitionWithStream(stream);
+  }
+
   // Inicia captura de frequência via Web Audio API para visualização
   const startAnalyser = useCallback(async () => {
     try {
@@ -138,7 +145,11 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
       return;
     }
 
-    // Tenta Web Speech API (sem API key, mais rápido)
+    await startRecognitionWithStream(stream);
+  }
+
+  // Inicia reconhecimento dado um stream já autorizado
+  async function startRecognitionWithStream(stream: MediaStream) {
     if (SpeechRecognition) {
       stream.getTracks().forEach((t) => t.stop()); // SpeechRecognition abre a própria stream
       await startAnalyser(); // stream separada só para visualização
@@ -159,7 +170,6 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
         stopAnalyser();
         setIsListening(false);
         if (e.error === 'service-not-allowed' || e.error === 'network') {
-          // Web Speech bloqueada → fallback Groq Whisper
           setVoiceError(null);
           try {
             const s2 = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -192,7 +202,6 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
         }
       }
     } else {
-      // Sem Web Speech API → Groq Whisper direto
       await startWhisperFallback(stream);
     }
   }
@@ -215,6 +224,7 @@ export function useVoiceInput({ onTranscript }: UseVoiceInputOptions) {
     clearError,
     needsPermission,
     dismissPermission: () => setNeedsPermission(false),
+    onPermissionGranted,
     handleVoiceToggle,
     analyserRef,
   };

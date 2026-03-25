@@ -382,25 +382,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
       <div
         ref={provStripRef}
         style={styles.providerStrip}
-        onMouseDown={(e) => {
-          drag.current = { isDown: true, startX: e.pageX - (provStripRef.current?.offsetLeft ?? 0), scrollLeft: provStripRef.current?.scrollLeft ?? 0 };
-          if (provStripRef.current) provStripRef.current.style.cursor = 'grabbing';
-        }}
-        onMouseLeave={() => {
-          drag.current.isDown = false;
-          if (provStripRef.current) provStripRef.current.style.cursor = 'grab';
-        }}
-        onMouseUp={() => {
-          drag.current.isDown = false;
-          if (provStripRef.current) provStripRef.current.style.cursor = 'grab';
-        }}
-        onMouseMove={(e) => {
-          if (!drag.current.isDown || !provStripRef.current) return;
-          e.preventDefault();
-          const x = e.pageX - (provStripRef.current.offsetLeft ?? 0);
-          const walk = (x - drag.current.startX) * 1.2;
-          provStripRef.current.scrollLeft = drag.current.scrollLeft - walk;
-        }}
+        onClickCapture={(e) => { if (didDragRef.current) { e.stopPropagation(); didDragRef.current = false; } }}
       >
         {([
           { id: 'claude',      icon: '∞',  label: 'Claude',     sub: 'CLI · sem API key' },
@@ -436,7 +418,6 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
                   (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
                 }
               }}
-              onMouseDown={(e) => e.stopPropagation()}
               title={p.id === 'claude' ? 'Claude Code CLI' : `${p.label} ${hasKey ? '✓ configurado' : '— sem API key'}`}
             >
               <span style={{ ...styles.provCardIcon, color: isActive ? D.accent : D.textDim }}>{p.icon}</span>
@@ -639,10 +620,10 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         hasActiveFile={Boolean(activeFile)}
       />
 
-      {/* Modal de permissão de microfone — abre Preferências do Sistema */}
+      {/* Modal de permissão de microfone */}
       {voice.needsPermission && (
         <MicPermissionModal
-          onAllow={voice.dismissPermission}
+          onGranted={voice.onPermissionGranted}
           onDeny={voice.dismissPermission}
         />
       )}

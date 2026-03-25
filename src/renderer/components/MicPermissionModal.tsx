@@ -1,25 +1,106 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface MicPermissionModalProps {
-  onAllow: () => void;
+  /** Chamado com o stream obtido quando o macOS concedeu acesso */
+  onGranted: (stream: MediaStream) => void;
+  /** Chamado quando o usuário recusou ou fechou sem agir */
   onDeny: () => void;
 }
 
-export default function MicPermissionModal({ onAllow, onDeny }: MicPermissionModalProps) {
+type State = 'idle' | 'requesting' | 'denied-permanent';
+
+export default function MicPermissionModal({ onGranted, onDeny }: MicPermissionModalProps) {
+  const [state, setState] = useState<State>('idle');
+
   async function handleAllow() {
-    // Abre Preferências do Sistema → Privacidade → Microfone no macOS
+    setState('requesting');
     try {
-      await window.api.shell.openExternal(
-        'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
-      );
-    } catch { /* ignora */ }
-    onAllow();
+      // Chama getUserMedia — isso aciona o dialog nativo do macOS diretamente
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Usuário clicou "Permitir" no dialog → acesso concedido
+      onGranted(stream);
+    } catch (err) {
+      const name = (err as DOMException).name;
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        // Usuário clicou "Não Permitir" no dialog do macOS
+        // Verifica se é bloqueio permanente (app já foi bloqueado antes) ou só recusa no dialog
+        try {
+          const perm = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+          if (perm.state === 'denied') {
+            // Bloqueio permanente — precisa ir em Preferências do Sistema
+            setState('denied-permanent');
+          } else {
+            onDeny();
+          }
+        } catch {
+          onDeny();
+        }
+      } else {
+        onDeny();
+      }
+    }
   }
 
+  async function handleOpenPrefs() {
+    await window.api.shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
+    );
+    onDeny();
+  }
+
+  // ── Estado: bloqueio permanente ──────────────────────────
+  if (state === 'denied-permanent') {
+    return (
+      <div style={styles.overlay}>
+        <div style={styles.modal}>
+          <div style={{ ...styles.iconWrap, borderColor: 'rgba(248,81,73,0.3)', background: 'rgba(248,81,73,0.07)' }}>
+            <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+              <circle cx="13" cy="13" r="11.5" stroke="#f85149" strokeWidth="1.5" />
+              <path d="M13 8v5M13 17v.5" stroke="#f85149" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </div>
+          <p style={styles.title}>Acesso bloqueado</p>
+          <p style={styles.desc}>
+            O macOS bloqueou o microfone para este app. Abra{' '}
+            <strong style={{ color: '#e6edf3' }}>Preferências do Sistema → Privacidade → Microfone</strong>{' '}
+            e ative o Infinit Code.
+          </p>
+          <div style={styles.actions}>
+            <button style={styles.btnDeny} onClick={onDeny}>Fechar</button>
+            <button style={{ ...styles.btnAllow, background: '#b62324', borderColor: 'rgba(248,81,73,0.4)' }} onClick={handleOpenPrefs}>
+              Abrir Preferências
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Estado: aguardando dialog do macOS ───────────────────
+  if (state === 'requesting') {
+    return (
+      <div style={styles.overlay}>
+        <div style={{ ...styles.modal, gap: 16 }}>
+          <div style={styles.iconWrap}>
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+              <circle cx="14" cy="14" r="12" stroke="#3fb950" strokeWidth="1.5" strokeDasharray="4 3"
+                style={{ animation: 'spin 1.2s linear infinite', transformOrigin: '14px 14px' }} />
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </svg>
+          </div>
+          <p style={{ ...styles.title, fontSize: 13 }}>Aguardando permissão…</p>
+          <p style={{ ...styles.desc, fontSize: 11 }}>
+            Responda ao diálogo do macOS que apareceu.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Estado padrão: pede para clicar em Permitir ──────────
   return (
     <div style={styles.overlay}>
       <div style={styles.modal}>
-        {/* Ícone */}
         <div style={styles.iconWrap}>
           <svg width="28" height="32" viewBox="0 0 28 32" fill="none">
             <rect x="9" y="1" width="10" height="18" rx="5" fill="rgba(63,185,80,0.15)" stroke="#3fb950" strokeWidth="1.5" />
@@ -29,32 +110,14 @@ export default function MicPermissionModal({ onAllow, onDeny }: MicPermissionMod
           </svg>
         </div>
 
-        {/* Título */}
         <p style={styles.title}>Permitir acesso ao microfone</p>
 
-        {/* Descrição */}
         <p style={styles.desc}>
           O Infinit Code precisa acessar o microfone para transcrever sua voz em texto.
-          Clique em <strong style={{ color: '#e6edf3' }}>Permitir</strong> para abrir as configurações do macOS
-          e autorizar o acesso.
+          Clique em <strong style={{ color: '#e6edf3' }}>Permitir</strong> e depois confirme
+          no diálogo do macOS.
         </p>
 
-        {/* Passos */}
-        <div style={styles.steps}>
-          {[
-            'Clique em "Permitir" abaixo',
-            'Em Preferências do Sistema → Privacidade → Microfone',
-            'Ative a chave ao lado de "Infinit Code"',
-            'Volte e tente novamente',
-          ].map((step, i) => (
-            <div key={i} style={styles.step}>
-              <span style={styles.stepNum}>{i + 1}</span>
-              <span style={styles.stepText}>{step}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Ações */}
         <div style={styles.actions}>
           <button style={styles.btnDeny} onClick={onDeny}>
             Agora não
@@ -63,7 +126,7 @@ export default function MicPermissionModal({ onAllow, onDeny }: MicPermissionMod
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0 }}>
               <path d="M1 7l4 4 7-8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            Permitir acesso
+            Permitir
           </button>
         </div>
       </div>
@@ -84,7 +147,7 @@ const styles: Record<string, React.CSSProperties> = {
     WebkitBackdropFilter: 'blur(4px)',
   },
   modal: {
-    width: 360,
+    width: 340,
     background: '#161b22',
     border: '1px solid rgba(240,246,252,0.12)',
     borderRadius: 12,
@@ -119,45 +182,11 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     lineHeight: 1.6,
   },
-  steps: {
-    width: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 7,
-    background: 'rgba(240,246,252,0.04)',
-    border: '1px solid rgba(240,246,252,0.07)',
-    borderRadius: 8,
-    padding: '12px 14px',
-  },
-  step: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  stepNum: {
-    flexShrink: 0,
-    width: 18,
-    height: 18,
-    borderRadius: '50%',
-    background: 'rgba(63,185,80,0.15)',
-    border: '1px solid rgba(63,185,80,0.25)',
-    color: '#3fb950',
-    fontSize: 10,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepText: {
-    fontSize: 11.5,
-    color: '#8b949e',
-    lineHeight: 1.5,
-  },
   actions: {
     width: '100%',
     display: 'flex',
     gap: 8,
-    marginTop: 2,
+    marginTop: 4,
   },
   btnDeny: {
     flex: 1,
