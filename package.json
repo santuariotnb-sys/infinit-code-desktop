@@ -1,7 +1,7 @@
 {
   "name": "infinit-code",
   "productName": "Infinit Code",
-  "version": "1.2.25",
+  "version": "1.2.26",
   "description": "Claude Code com superpoderes — IDE desktop para iniciantes",
   "main": ".webpack/main",
   "private": true,

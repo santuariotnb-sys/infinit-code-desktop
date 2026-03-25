@@ -402,17 +402,33 @@ Ao revisar e escrever código:
         reject(new Error('timeout: Claude demorou mais de 120s'));
       }, 120_000);
 
+      let stdoutBuffer = '';
       proc.stdout.on('data', (data: Buffer) => {
-        const lines = data.toString().split('\n').filter(Boolean);
+        stdoutBuffer += data.toString();
+        const lines = stdoutBuffer.split('\n');
+        // Mantém a última linha incompleta no buffer
+        stdoutBuffer = lines.pop() ?? '';
         for (const line of lines) {
+          if (!line.trim()) continue;
           try {
             const json = JSON.parse(line);
             chunks.push(json);
-            if (json.session_id) newSessionId = json.session_id;
-            if (json.cost_usd) totalCost = json.cost_usd;
-            if (json.type === 'stream_event' && json.event?.delta?.type === 'text_delta') {
-              event.sender.send('claude:chunk', { text: json.event.delta.text });
+            // session_id e custo vêm do evento 'result'
+            if (json.type === 'result') {
+              if (json.session_id) newSessionId = json.session_id;
+              if (json.total_cost_usd) totalCost = json.total_cost_usd;
             }
+            // session_id também pode vir em qualquer evento
+            if (json.session_id && !newSessionId) newSessionId = json.session_id;
+            // Streaming de texto: evento 'assistant' com blocos de conteúdo
+            if (json.type === 'assistant' && Array.isArray(json.message?.content)) {
+              for (const block of json.message.content) {
+                if (block.type === 'text' && block.text) {
+                  event.sender.send('claude:chunk', { text: block.text });
+                }
+              }
+            }
+            // Tool use
             if (json.type === 'tool_use' && json.name) {
               event.sender.send('claude:tool', { name: json.name, input: json.input });
             }

@@ -26,7 +26,10 @@ const SERVER_REGEXES = [
   /\bport\s+(\d{4,5})\b/i,
 ];
 
-const HMR_REGEXES = [/HMR/, /Fast Refresh/, /reloaded/i, /hot update/i];
+// HMR puro → Vite atualiza via WebSocket, não precisa de ação
+const HMR_REGEXES = [/HMR/, /Fast Refresh/, /hot update/i];
+// Full reload sinalizado → reload suave sem recriar iframe
+const FULL_RELOAD_REGEXES = [/\breloaded\b/i, /\bfull[- ]reload\b/i];
 const ERROR_REGEXES = [/EADDRINUSE/, /Cannot find module/i, /SyntaxError:/i];
 
 // Arquivos candidatos a conter rotas
@@ -294,11 +297,25 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
       setServerError(false);
     }
 
-    if (detectedPortRef.current && HMR_REGEXES.some(r => r.test(recent))) {
-      setIframeKey(k => k + 1);
-      setHmrFlash(true);
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-      flashTimer.current = setTimeout(() => setHmrFlash(false), 800);
+    if (detectedPortRef.current) {
+      // HMR puro → só flash visual, Vite já atualizou via WebSocket
+      if (HMR_REGEXES.some(r => r.test(recent))) {
+        setHmrFlash(true);
+        if (flashTimer.current) clearTimeout(flashTimer.current);
+        flashTimer.current = setTimeout(() => setHmrFlash(false), 600);
+      }
+      // Full reload sinalizado → reload suave sem recriar iframe
+      if (FULL_RELOAD_REGEXES.some(r => r.test(recent))) {
+        try {
+          iframeRef.current?.contentWindow?.location.reload();
+        } catch {
+          // Cross-origin fallback: recria iframe
+          setIframeKey(k => k + 1);
+        }
+        setHmrFlash(true);
+        if (flashTimer.current) clearTimeout(flashTimer.current);
+        flashTimer.current = setTimeout(() => setHmrFlash(false), 600);
+      }
     }
   }, [terminalOutput]);
 
@@ -743,6 +760,7 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
+    minHeight: 0,
   },
   skeleton: {
     flex: 1,
@@ -760,14 +778,16 @@ const s: Record<string, React.CSSProperties> = {
   },
   iframeWrap: {
     flex: 1,
-    overflow: 'auto',
+    display: 'flex',
+    justifyContent: 'center',
+    overflow: 'hidden',
     background: '#0d0d0d',
+    minHeight: 0,
   },
   iframe: {
     height: '100%',
     border: 'none',
     background: '#fff',
     flexShrink: 0,
-    minHeight: '100%',
   },
 };
