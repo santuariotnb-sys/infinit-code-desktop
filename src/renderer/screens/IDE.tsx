@@ -62,6 +62,13 @@ export default function IDE() {
   // Refresh do preview após git sync/pull
   const [previewRefreshTrigger, setPreviewRefreshTrigger] = useState(0);
   const triggerPreviewRefresh = () => setPreviewRefreshTrigger(n => n + 1);
+  // Aguarda Vite recompilar após git sync antes de recarregar o iframe
+  const triggerPreviewRefreshDelayed = () => {
+    // 1º reload: após 2.5s (Vite detecta e compila os arquivos novos)
+    setTimeout(() => setPreviewRefreshTrigger(n => n + 1), 2500);
+    // 2º reload de segurança: após 5s (caso a primeira ainda pegue cache)
+    setTimeout(() => setPreviewRefreshTrigger(n => n + 1), 5000);
+  };
   type ChatTab = 'chat' | 'research' | 'agents';
   const [chatTab, setChatTab] = useState<ChatTab>('chat');
   const [showSettings, setShowSettings] = useState(false);
@@ -138,7 +145,15 @@ export default function IDE() {
         [data-resize]:active { background: rgba(60,176,67,0.55) !important; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
+
+      {/* Toast de erro de arquivo */}
+      {fileManager.fileError && (
+        <div style={{ position: 'fixed', top: 50, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: 'rgba(217,48,48,0.95)', color: '#fff', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontFamily: 'monospace', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', animation: 'slideDown .2s ease', pointerEvents: 'none' }}>
+          ⚠ {fileManager.fileError}
+        </div>
+      )}
 
       <Toolbar
         projectPath={fileManager.projectPath}
@@ -398,7 +413,7 @@ export default function IDE() {
           onClose={panels.toggleGit}
           projectPath={fileManager.projectPath}
           onSyncProgress={(msg) => terminal.appendOutput(`[git] ${msg}`)}
-          onSyncDone={triggerPreviewRefresh}
+          onSyncDone={triggerPreviewRefreshDelayed}
           onConnect={() => github.setShowAuthModal(true)}
           onChangesUpdate={setGitChangeCount}
         />

@@ -233,17 +233,25 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     setTimeout(() => onRunDev(), 600);
   }, [projectPath, hasNodeModules, onRunDev]);
 
-  // Refresh externo (ex: pós-git-sync/pull) — só recarrega se preview estiver ao vivo
+  // Refresh externo (ex: pós-git-sync/pull) — aguarda Vite compilar antes de recarregar
   useEffect(() => {
     if (!refreshTrigger || !port) return;
     try {
-      iframeRef.current?.contentWindow?.location.reload();
+      // Navega para a URL atual forçando bypass de cache (adiciona ?_r=timestamp)
+      const win = iframeRef.current?.contentWindow;
+      if (win) {
+        const base = `http://localhost:${port}${currentPath}`;
+        const url = base.includes('?') ? `${base}&_r=${Date.now()}` : `${base}?_r=${Date.now()}`;
+        win.location.replace(url);
+      } else {
+        setIframeKey(k => k + 1);
+      }
     } catch {
       setIframeKey(k => k + 1);
     }
     setHmrFlash(true);
     if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setHmrFlash(false), 800);
+    flashTimer.current = setTimeout(() => setHmrFlash(false), 1200);
   }, [refreshTrigger]);
 
   // Cleanup timers
