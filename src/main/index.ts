@@ -136,6 +136,10 @@ function createWindow(): void {
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
+    mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+      const tag = ['verbose', 'info', 'warn', 'error'][level] ?? 'log';
+      console.log(`[renderer:${tag}] ${message} (${sourceId}:${line})`);
+    });
   }
 }
 
