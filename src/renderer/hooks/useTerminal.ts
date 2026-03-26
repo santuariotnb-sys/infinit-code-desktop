@@ -37,6 +37,16 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
           dirty = false;
         }, delay);
       }
+
+      // Port detection no terminal principal (servidor iniciado manualmente)
+      if (!detectedPortRef.current) {
+        const port = detectPort(data);
+        if (port) {
+          detectedPortRef.current = port;
+          setDetectedPort(port);
+          onPortDetectedRef.current?.(port);
+        }
+      }
     });
 
     const injectCleanup = window.api.terminal.onInject?.((text: string) => {

@@ -196,6 +196,18 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   const onRunDevRef = useRef(onRunDev);
   useEffect(() => { onRunDevRef.current = onRunDev; });
 
+  // Usa serverPort quando disponível (servidor já rodando no ghost terminal)
+  useEffect(() => {
+    if (serverPort && serverPort !== detectedPortRef.current) {
+      detectedPortRef.current = serverPort;
+      if (probeTimer.current) clearTimeout(probeTimer.current);
+      setPort(serverPort);
+      setStatus('loading');
+      setServerError(false);
+      setIframeRetries(0);
+    }
+  }, [serverPort]);
+
   // Notifica IDE quando rota ou porta muda (sem incluir a callback na dep array)
   useEffect(() => {
     onPathChangeRef.current?.(currentPath, port);
