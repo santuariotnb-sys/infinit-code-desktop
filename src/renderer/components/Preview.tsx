@@ -167,6 +167,8 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   // ── Detecta rotas do arquivo de roteamento do projeto ──
   const detectRoutes = useCallback(async () => {
     if (!projectPath) return;
+
+    // 1) Tenta React Router (path= em código)
     for (const rel of ROUTER_CANDIDATES) {
       const result = await window.api.files.read(`${projectPath}/${rel}`);
       if (!result?.ok || !result.data) continue;
@@ -176,6 +178,16 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
         return;
       }
     }
+
+    // 2) Fallback: scan filesystem (Next.js App Router / Pages Router)
+    try {
+      const res = await window.api.files.scanRoutes(projectPath);
+      if (res.ok && res.routes.length > 0) {
+        setRoutes(res.routes.map((r: { route: string }) => r.route));
+        return;
+      }
+    } catch { /* scanRoutes não disponível */ }
+
     setRoutes([]);
   }, [projectPath]);
 
