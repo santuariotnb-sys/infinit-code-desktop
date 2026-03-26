@@ -252,7 +252,8 @@ nav {
   transition: all .2s;
   letter-spacing: -.01em;
 }
-.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 28px rgba(60,176,67,0.3); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(60,176,67,0.35); }
+.btn-primary:active { transform: translateY(0); box-shadow: 0 2px 12px rgba(60,176,67,0.2); }
 .btn-secondary {
   background: var(--white-hi);
   color: var(--ink2);
@@ -268,6 +269,7 @@ nav {
   transition: all .2s;
 }
 .btn-secondary:hover { transform: translateY(-1px); background: rgba(255,255,255,0.75); }
+.btn-secondary:active { transform: translateY(0); }
 
 .hero-note {
   font-size: 12px;
@@ -474,9 +476,18 @@ section { padding: 100px 40px; max-width: 1100px; margin: 0 auto; }
 }
 .feat-card {
   padding: 28px 26px 26px;
-  transition: transform .2s;
+  transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease;
 }
-.feat-card:hover { transform: translateY(-3px); }
+.feat-card:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 1px 0 var(--rim) inset,
+    1px 0 0 var(--rim2) inset,
+    -1px 0 0 rgba(255,255,255,0.3) inset,
+    0 -1px 0 rgba(0,0,0,0.04) inset,
+    0 16px 48px rgba(0,0,0,0.12),
+    0 4px 12px rgba(60,176,67,0.06);
+}
 .feat-icon {
   width: 40px; height: 40px;
   background: rgba(255,255,255,0.7);
@@ -515,9 +526,14 @@ section { padding: 100px 40px; max-width: 1100px; margin: 0 auto; }
   align-items: flex-start;
   gap: 16px;
   padding: 20px 22px;
-  transition: transform .2s;
+  transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease;
 }
-.step-card:hover { transform: translateX(4px); }
+.step-card:hover {
+  transform: translateX(4px);
+  box-shadow:
+    0 1px 0 var(--rim) inset,
+    0 12px 36px rgba(0,0,0,0.08);
+}
 .step-num {
   width: 32px; height: 32px;
   background: rgba(255,255,255,0.7);
@@ -810,32 +826,111 @@ footer {
 #phase2 { animation: fadeUp .6s ease both; }
 @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:none} }
 
-/* mobile nav */
-@media (max-width: 600px) {
-  nav { padding: 0 16px; }
-  .nav-links { display: none; }
-  .hero { padding: 80px 20px 60px; }
-  .type-terminal { font-size: 13px; padding: 14px 18px; }
-  .hero-h1 { font-size: clamp(36px, 10vw, 60px); }
-  .hero-h2 { font-size: clamp(26px, 7vw, 44px); }
-  .hero-ctas { flex-direction: column; width: 100%; }
-  .btn-primary, .btn-secondary { width: 100%; text-align: center; }
-}
-
-
-
+/* ── SCROLL REVEAL ── */
 .reveal {
   opacity: 0;
-  transform: translateY(20px);
-  transition: opacity .6s ease, transform .6s ease;
+  transform: translateY(24px);
+  transition: opacity .7s cubic-bezier(.22,1,.36,1), transform .7s cubic-bezier(.22,1,.36,1);
 }
 .reveal.visible {
   opacity: 1;
   transform: none;
 }
 
+/* stagger children */
+.reveal:nth-child(2) { transition-delay: .08s; }
+.reveal:nth-child(3) { transition-delay: .16s; }
+
 /* divider */
 .sep { border: none; height: 1px; background: rgba(255,255,255,0.5); margin: 0 40px; }
+
+/* ── SCROLL PADDING (nav fixa) ── */
+html { scroll-padding-top: 70px; }
+
+/* ── FOCUS STATES (acessibilidade) ── */
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── REDUCED MOTION ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+}
+
+/* ── TABLET (601–900px) ── */
+@media (max-width: 900px) {
+  section { padding: 80px 24px; }
+  .features-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .how-grid { grid-template-columns: 1fr; gap: 48px; }
+  .license-inner { grid-template-columns: 1fr; gap: 40px; text-align: center; }
+  .license-inner .reveal { display: flex; flex-direction: column; align-items: center; }
+  .pricing-grid { grid-template-columns: 1fr 1fr; gap: 16px; }
+  .hero-mockup { max-width: 100%; }
+  .mockup-wrap { border-radius: 14px; }
+  .sep { margin: 0 24px; }
+  footer { padding: 32px 24px; }
+}
+
+/* ── MOBILE (≤600px) ── */
+@media (max-width: 600px) {
+  nav { padding: 0 16px; height: 52px; }
+  .nav-links { display: none; }
+  .btn-nav { padding: 7px 14px; font-size: 12px; }
+
+  .hero { padding: 80px 20px 60px; }
+  .hero-badge { font-size: 10px; padding: 5px 12px; margin-bottom: 24px; }
+  .hero-h1 { font-size: clamp(32px, 10vw, 56px); margin-bottom: 6px; }
+  .hero-h2 { font-size: clamp(24px, 7vw, 40px); margin-bottom: 20px; }
+  .hero-sub { font-size: 15px; margin-bottom: 32px; }
+  .hero-ctas { flex-direction: column; width: 100%; gap: 10px; margin-bottom: 48px; }
+  .btn-primary, .btn-secondary { width: 100%; text-align: center; padding: 14px 20px; }
+  .hero-note { font-size: 11px; }
+
+  .type-terminal { font-size: 13px; padding: 14px 18px; min-width: auto; }
+
+  .hero-mockup { margin-top: 40px; }
+  .mockup-wrap { border-radius: 12px; }
+  .mockup-wrap > div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+  }
+  .mock-tree { display: none; }
+  .mock-chat { display: none; }
+  .mock-editor { min-height: 160px; }
+
+  section { padding: 60px 20px; }
+  .sec-h2 { font-size: clamp(28px, 8vw, 42px); }
+  .sec-sub { font-size: 14px; }
+
+  .features-grid { grid-template-columns: 1fr; gap: 12px; margin-top: 40px; }
+  .feat-card { padding: 22px 20px; }
+
+  .how-grid { grid-template-columns: 1fr; gap: 40px; margin-top: 40px; }
+  .steps-col { gap: 10px; }
+  .step-card { padding: 16px 18px; }
+
+  .license-wrap { padding: 60px 20px; }
+  .license-inner { grid-template-columns: 1fr; gap: 32px; text-align: center; }
+  .license-inner .reveal { display: flex; flex-direction: column; align-items: center; }
+  .lic-key { padding: 24px 16px; }
+  .lic-key-display { font-size: 16px; letter-spacing: .05em; word-break: break-all; }
+
+  .pricing-grid { grid-template-columns: 1fr; gap: 16px; margin-top: 40px; }
+  .price-card { padding: 28px 24px; }
+  .price-val { font-size: 48px; }
+
+  footer { flex-direction: column; gap: 12px; padding: 28px 20px; text-align: center; }
+  .foot-links { gap: 16px; }
+
+  .sep { margin: 0 16px; }
+}
 </style>
 </head>
 <body>
@@ -1231,13 +1326,13 @@ footer {
 <!-- FOOTER -->
 <footer id="baixar">
   <div class="foot-left">
-    Feito com ❤️ no Brasil · <a href="/cdn-cgi/l/email-protection#2754525748555342674e49414e494e534448434209465757"><span class="__cf_email__" data-cfemail="740701041b060011341d1a121d1a1d00171b10115a150404">[email&#160;protected]</span></a>
+    Feito com ❤️ no Brasil · suporte@infinitcode.app
   </div>
   <div class="foot-links">
-    <a href="#">Termos</a>
-    <a href="#">Privacidade</a>
-    <a href="#">Documentação</a>
-    <a href="#">GitHub</a>
+    <a href="#recursos">Recursos</a>
+    <a href="#como-funciona">Como funciona</a>
+    <a href="#preco">Preço</a>
+    <a href="https://github.com/santuariotnb-sys/infinit-code-desktop" target="_blank" rel="noopener">GitHub</a>
   </div>
 </footer>
 
