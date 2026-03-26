@@ -22,6 +22,7 @@ interface ElectronAPI {
     write: (data: string) => Promise<void>;
     resize: (cols: number, rows: number) => Promise<void>;
     kill: () => Promise<void>;
+    restart: (cwd?: string) => Promise<{ ok: boolean; cols?: number; rows?: number; error?: string }>;
     onData: (cb: (data: string) => void) => () => void;
     onInject?: (cb: (text: string) => void) => () => void;
     onExit?: (cb: () => void) => () => void;

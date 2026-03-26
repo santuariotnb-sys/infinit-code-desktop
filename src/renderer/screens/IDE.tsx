@@ -384,6 +384,13 @@ export default function IDE() {
               <span style={styles.terminalDot} />
               <span style={styles.terminalTabOn}>bash</span>
               <span style={{ flex: 1 }} />
+              <button
+                onClick={(e) => { e.stopPropagation(); window.api.terminal.restart(); }}
+                title="Reiniciar terminal"
+                style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 11, fontFamily: 'monospace', padding: '0 6px', transition: 'color .15s' }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#ffaa00')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#555')}
+              >↻</button>
               <span style={styles.terminalToggle}>{terminal.isExpanded ? '▾' : '▴'}</span>
             </div>
             {terminal.isExpanded && (

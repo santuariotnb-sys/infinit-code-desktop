@@ -22,9 +22,19 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
 
   // ── Terminal visível do usuário ──────────────────────────────────────────
   useEffect(() => {
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let dirty = false;
+
     const cleanup = window.api.terminal.onData((data: string) => {
       outputRef.current = (outputRef.current + data).split('\n').slice(-300).join('\n');
-      setTerminalOutput(outputRef.current);
+      // Throttle: atualiza React state no máximo a cada 50ms
+      if (!dirty) {
+        dirty = true;
+        flushTimer = setTimeout(() => {
+          setTerminalOutput(outputRef.current);
+          dirty = false;
+        }, 50);
+      }
     });
 
     const injectCleanup = window.api.terminal.onInject?.((text: string) => {
@@ -34,14 +44,24 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
     return () => {
       cleanup();
       injectCleanup?.();
+      if (flushTimer) clearTimeout(flushTimer);
     };
   }, []);
 
   // ── Terminal fantasma — dev server ───────────────────────────────────────
   useEffect(() => {
+    let ghostFlushTimer: ReturnType<typeof setTimeout> | null = null;
+    let ghostDirty = false;
+
     const cleanup = window.api.terminal.ghost.onData((data: string) => {
       ghostRef.current = (ghostRef.current + data).split('\n').slice(-300).join('\n');
-      setGhostOutput(ghostRef.current);
+      if (!ghostDirty) {
+        ghostDirty = true;
+        ghostFlushTimer = setTimeout(() => {
+          setGhostOutput(ghostRef.current);
+          ghostDirty = false;
+        }, 50);
+      }
 
       // Port detection no ghost output
       const port = detectPort(data);
@@ -60,6 +80,7 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
     return () => {
       cleanup();
       exitCleanup();
+      if (ghostFlushTimer) clearTimeout(ghostFlushTimer);
       // Matar ghost process ao desmontar para não vazar processos dev server
       window.api.terminal.ghost.kill().catch?.(() => {});
     };

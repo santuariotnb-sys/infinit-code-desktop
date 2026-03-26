@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { TERMINAL } from '../lib/constants';
 import { Terminal as XTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -9,6 +9,21 @@ export default function Terminal() {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const [frozen, setFrozen] = useState(false);
+  const lastDataTime = useRef(Date.now());
+  const frozenCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleRestart = useCallback(async () => {
+    const term = termRef.current;
+    if (term) {
+      term.clear();
+      term.write('\r\n\x1b[33m[reiniciando terminal...]\x1b[0m\r\n');
+    }
+    setFrozen(false);
+    lastDataTime.current = Date.now();
+    await window.api.terminal.restart();
+    try { fitAddonRef.current?.fit(); } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return;
@@ -42,7 +57,7 @@ export default function Terminal() {
       lineHeight: 1.3,
       cursorBlink: true,
       cursorStyle: 'bar',
-      scrollback: 10000,
+      scrollback: 5000,
       allowProposedApi: true,
     });
 
@@ -73,24 +88,42 @@ export default function Terminal() {
     createPty();
 
     // Input do usuário → PTY
+    // Reseta o timer de frozen ao digitar
     term.onData((data) => {
+      lastDataTime.current = Date.now();
+      setFrozen(false);
       window.api.terminal.write(data);
     });
 
     // Saída do PTY → xterm
     const cleanupData = window.api.terminal.onData((data) => {
+      lastDataTime.current = Date.now();
+      setFrozen(false);
       term.write(data);
     });
 
     // Auto-restart quando PTY morre inesperadamente
     const cleanupExit = window.api.terminal.onExit?.(() => {
-      if (!termRef.current) return; // componente já desmontado
+      if (!termRef.current) return;
       term.write('\r\n\x1b[33m[terminal reiniciando...]\x1b[0m\r\n');
       setTimeout(() => {
         if (!termRef.current) return;
         createPty();
       }, 800);
     }) ?? (() => {});
+
+    // Detecta terminal frozen: se nenhum dado entra/sai por 15s após input do user
+    let userTypedRecently = false;
+    const origOnData = term.onData;
+    term.onKey(() => { userTypedRecently = true; });
+    frozenCheckRef.current = setInterval(() => {
+      if (!userTypedRecently) return;
+      const elapsed = Date.now() - lastDataTime.current;
+      if (elapsed > 15_000) {
+        setFrozen(true);
+        userTypedRecently = false;
+      }
+    }, 5_000);
 
     // Resize com debounce para não sobrecarregar o PTY
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -114,6 +147,7 @@ export default function Terminal() {
     return () => {
       mounted = false;
       if (retryTimer) clearTimeout(retryTimer);
+      if (frozenCheckRef.current) clearInterval(frozenCheckRef.current);
       cleanupData();
       cleanupExit();
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -149,6 +183,40 @@ export default function Terminal() {
           background: '#0a0a0a',
         }}
       />
+      {frozen && (
+        <div style={{
+          position: 'absolute',
+          bottom: 8,
+          right: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          background: 'rgba(255, 170, 0, 0.15)',
+          border: '1px solid rgba(255, 170, 0, 0.3)',
+          borderRadius: 6,
+          padding: '4px 10px',
+          zIndex: 10,
+        }}>
+          <span style={{ fontSize: 11, color: '#ffaa00', fontFamily: 'monospace' }}>
+            Terminal sem resposta
+          </span>
+          <button
+            onClick={handleRestart}
+            style={{
+              background: 'rgba(255, 170, 0, 0.2)',
+              border: '1px solid rgba(255, 170, 0, 0.4)',
+              borderRadius: 4,
+              color: '#ffaa00',
+              fontSize: 11,
+              fontFamily: 'monospace',
+              padding: '2px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            Reiniciar
+          </button>
+        </div>
+      )}
     </div>
   );
 }

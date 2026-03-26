@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
     write: (data: string) => ipcRenderer.invoke('terminal:write', data),
     resize: (cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', cols, rows),
     kill: () => ipcRenderer.invoke('terminal:kill'),
+    restart: (cwd?: string) => ipcRenderer.invoke('terminal:restart', cwd),
     onData: (cb: (data: string) => void) => {
       const handler = (_: Electron.IpcRendererEvent, d: string) => cb(d);
       ipcRenderer.on('terminal:data', handler);

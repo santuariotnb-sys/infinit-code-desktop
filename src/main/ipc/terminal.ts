@@ -17,6 +17,25 @@ export function getPtyStatus(): 'ok' | 'dead' | 'not-started' {
   }
 }
 
+/**
+ * Cria um sender com throttle para não sobrecarregar o IPC.
+ * Acumula dados e envia em batch a cada INTERVAL ms.
+ */
+function createThrottledSender(win: BrowserWindow, channel: string, intervalMs = 16) {
+  let buffer = '';
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    timer = null;
+    if (!buffer || win.isDestroyed()) return;
+    win.webContents.send(channel, buffer);
+    buffer = '';
+  };
+  return (data: string) => {
+    buffer += data;
+    if (!timer) timer = setTimeout(flush, intervalMs);
+  };
+}
+
 export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('terminal:create', (_event, cwd?: string) => {
     try {
@@ -51,10 +70,9 @@ export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
         } as Record<string, string>,
       });
 
+      const sendData = createThrottledSender(mainWindow, 'terminal:data');
       ptyProcess.onData((data: string) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('terminal:data', data);
-        }
+        sendData(data);
       });
 
       ptyProcess.onExit(() => {
@@ -93,6 +111,53 @@ export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
     }
   });
 
+  // Restart forçado — mata o PTY e recria, útil quando o terminal trava
+  ipcMain.handle('terminal:restart', (_event, cwd?: string) => {
+    try {
+      if (ptyProcess) {
+        const pid = ptyProcess.pid;
+        try { ptyProcess.kill(); } catch { /* ignore */ }
+        ptyProcess = null;
+        if (pid) treeKill(pid, 'SIGKILL');
+      }
+      // Delega para o handler de create que já faz toda a lógica
+      // Precisa forçar recriação passando cwd
+      const isWin = process.platform === 'win32';
+      const shell = isWin ? 'powershell.exe' : (process.env.SHELL || '/bin/bash');
+      const homedir = os.homedir();
+
+      ptyProcess = pty.spawn(shell, [], {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 24,
+        cwd: cwd || homedir,
+        handleFlowControl: true,
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          COLORTERM: 'truecolor',
+        } as Record<string, string>,
+      });
+
+      const sendData = createThrottledSender(mainWindow, 'terminal:data');
+      ptyProcess.onData((data: string) => {
+        sendData(data);
+      });
+
+      ptyProcess.onExit(() => {
+        ptyProcess = null;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('terminal:exit');
+        }
+      });
+
+      return { ok: true, cols: 80, rows: 24 };
+    } catch (error) {
+      console.error('[terminal:restart]', error);
+      return { ok: false, error: (error as Error).message };
+    }
+  });
+
   // ── Ghost terminal — PTY invisível para o dev server ──────────────────────
   function killGhost() {
     if (ptyGhost) {
@@ -115,10 +180,9 @@ export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
         cwd: cwd || os.homedir(),
         env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
       });
+      const sendGhostData = createThrottledSender(mainWindow, 'terminal:ghost:data');
       ptyGhost.onData((data: string) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('terminal:ghost:data', data);
-        }
+        sendGhostData(data);
       });
       ptyGhost.onExit(() => {
         ptyGhost = null;
