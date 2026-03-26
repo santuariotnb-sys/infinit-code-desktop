@@ -10,8 +10,13 @@ import { registerLicenseHandlers } from './ipc/license';
 import { registerAuthHandlers } from './ipc/auth';
 import { registerSkillsHandlers } from './ipc/skills';
 import { registerAIProviderHandlers } from './ipc/aiProviders';
+import { registerHealthHandlers } from './ipc/health';
+import { registerBroadcastHandlers } from './ipc/broadcast';
 import { runAutoSetup } from './services/auto-setup';
 import { initUpdater } from './services/updater';
+import { startHealthMonitor, stopHealthMonitor } from './services/health';
+import { startBroadcastMonitor, stopBroadcastMonitor } from './services/broadcast';
+import { setLicenseKey } from './services/error-reporter';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -76,6 +81,8 @@ function createWindow(): void {
     setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         runAutoSetup(mainWindow);
+        startHealthMonitor(mainWindow);
+        startBroadcastMonitor(mainWindow);
       }
     }, 600);
   });
@@ -137,6 +144,8 @@ function createWindow(): void {
     registerAuthHandlers(mainWindow);
     registerSkillsHandlers(mainWindow);
     registerAIProviderHandlers(mainWindow);
+    registerHealthHandlers();
+    registerBroadcastHandlers();
 
     ipcMain.handle('window:screenshot', async () => {
       try {
@@ -152,16 +161,15 @@ function createWindow(): void {
       }
     });
 
-    // Solicita permissão de microfone ao macOS — necessário para getUserMedia / Web Speech API
+    // Verifica status da permissão de microfone no macOS (sem mostrar dialog do sistema —
+    // o dialog nativo é disparado pelo getUserMedia diretamente no renderer)
     ipcMain.handle('media:request-microphone', async () => {
-      if (process.platform !== 'darwin') return { granted: true };
+      if (process.platform !== 'darwin') return { granted: true, status: 'granted' };
       try {
         const status = systemPreferences.getMediaAccessStatus('microphone');
-        if (status === 'granted') return { granted: true };
-        const granted = await systemPreferences.askForMediaAccess('microphone');
-        return { granted };
+        return { granted: status === 'granted', status };
       } catch {
-        return { granted: false };
+        return { granted: false, status: 'unknown' };
       }
     });
 
@@ -254,12 +262,20 @@ app.on('second-instance', () => {
 });
 
 app.on('window-all-closed', () => {
+  stopHealthMonitor();
+  stopBroadcastMonitor();
   if (process.platform !== 'darwin') app.quit();
 });
 
 let handlersRegistered = false;
 
 app.whenReady().then(() => {
+  // Define user-agent na sessão inteira — Web Speech API precisa de Chrome UA
+  // (Google bloqueia requests com o UA padrão do Electron)
+  session.defaultSession.setUserAgent(
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+  );
+
   buildMenu();
   createWindow();
 

@@ -200,7 +200,7 @@ export function registerAIProviderHandlers(mainWindow: BrowserWindow): void {
     try {
       if (!VALID_PROVIDERS.has(provider)) return { ok: true, key: '' };
       const key = getSecret(`ai-provider-${provider}`);
-      return { ok: true, key: key ?? '' };
+      return { ok: true, key: key ?? null };
     } catch {
       return { ok: true, key: '' };
     }

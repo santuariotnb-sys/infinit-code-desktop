@@ -94,6 +94,18 @@ interface ElectronAPI {
     validate: (key: string, email: string) => Promise<{ valid: boolean; plan?: string; expiresAt?: string; error?: string }>;
     getStored: () => Promise<{ valid: boolean; key: string; email: string; plan: string } | null>;
     clear: () => Promise<void>;
+    getDeviceId?: () => Promise<string>;
+    onRevoked?: (cb: (data: { reason: string; message: string }) => void) => () => void;
+  };
+  health: {
+    get: () => Promise<{ ok: boolean; data?: { claudeCli: string; terminal: string; preview: string; lastCheck: string } }>;
+    setPreviewPort: (port: number | null) => Promise<{ ok: boolean }>;
+    onUpdated: (cb: (data: { claudeCli: string; terminal: string; preview: string; lastCheck: string }) => void) => () => void;
+  };
+  broadcast: {
+    get: () => Promise<{ ok: boolean; data?: Array<{ id: string; title: string; body: string; severity: string; expiresAt?: string; cta?: { label: string; url: string } }> }>;
+    dismiss: (id: string) => Promise<{ ok: boolean }>;
+    onUpdated: (cb: (data: Array<{ id: string; title: string; body: string; severity: string; expiresAt?: string; cta?: { label: string; url: string } }>) => void) => () => void;
   };
   updater: {
     checkForUpdates: () => Promise<void>;
@@ -103,7 +115,7 @@ interface ElectronAPI {
     openExternal: (url: string) => Promise<void>;
   };
   media: {
-    requestMicrophone: () => Promise<{ granted: boolean }>;
+    requestMicrophone: () => Promise<{ granted: boolean; status: string }>;
   };
   setup: {
     onProgress: (cb: (data: { step: string; pct: number; msg: string; status: 'active' | 'done' | 'error' }) => void) => () => void;
@@ -129,7 +141,7 @@ interface ElectronAPI {
     cancel: () => Promise<{ ok: boolean }>;
     transcribe?: (audioBuffer: ArrayBuffer, lang?: string) => Promise<{ ok: boolean; text?: string; error?: string }>;
     saveKey: (provider: string, key: string) => Promise<{ ok: boolean }>;
-    getKey: (provider: string) => Promise<{ key: string | null }>;
+    getKey: (provider: string) => Promise<{ ok: boolean; key: string | null }>;
     models: () => Promise<unknown>;
     onChunk: (cb: (data: { text: string }) => void) => () => void;
     onError: (cb: (data: { message: string }) => void) => () => void;

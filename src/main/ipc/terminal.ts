@@ -6,6 +6,17 @@ import treeKill from 'tree-kill';
 let ptyProcess: pty.IPty | null = null;
 let ptyGhost: pty.IPty | null = null; // Terminal fantasma — roda dev server em background
 
+/** Retorna o status atual do PTY principal — usado pelo Health Monitor. */
+export function getPtyStatus(): 'ok' | 'dead' | 'not-started' {
+  if (!ptyProcess) return 'not-started';
+  try {
+    const pid = ptyProcess.pid;
+    return pid > 0 ? 'ok' : 'dead';
+  } catch {
+    return 'dead';
+  }
+}
+
 export function registerTerminalHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('terminal:create', (_event, cwd?: string) => {
     try {

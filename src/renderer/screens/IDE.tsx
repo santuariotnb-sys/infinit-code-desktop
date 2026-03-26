@@ -23,6 +23,8 @@ import { useToast } from '../hooks/useToast';
 import { useSettings } from '../hooks/useSettings';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import TabBar from '../components/TabBar';
+import { HealthIndicator } from '../components/HealthIndicator';
+import { BroadcastBanner } from '../components/BroadcastBanner';
 
 const NOISE = `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E")`;
 
@@ -131,12 +133,15 @@ export default function IDE() {
     if (terminal.detectedPort) panels.setShowPreview(true);
   }, [terminal.detectedPort]);
 
-  const [previewWidth,   setPreviewWidth]   = useState(420);
+  // previewRatio: fração do editorRow que o Preview ocupa (0..1)
+  // Editor recebe (1 - previewRatio) automaticamente → proporcional ao redimensionar chat
+  const [previewRatio,   setPreviewRatio]   = useState(0.38);
   const [chatWidth,      setChatWidth]      = useState(300);
   const [terminalHeight, setTerminalHeight] = useState(220);
   const [sidebarWidth,   setSidebarWidth]   = useState(200);
 
-  const previewDragRef  = useRef<{ startX: number; startW: number } | null>(null);
+  const editorRowRef    = useRef<HTMLDivElement>(null);
+  const previewDragRef  = useRef<{ startX: number; startRatio: number; containerW: number } | null>(null);
   const chatDragRef     = useRef<{ startX: number; startW: number } | null>(null);
   const terminalDragRef = useRef<{ startY: number; startH: number } | null>(null);
   const sidebarDragRef  = useRef<{ startX: number; startW: number } | null>(null);
@@ -154,13 +159,33 @@ export default function IDE() {
     window.addEventListener('mouseup', onUp);
   }
 
-  const startPreviewDrag = makeDragH(previewDragRef,  previewWidth,  setPreviewWidth,  280, 1000);
-  const startChatDrag    = makeDragH(chatDragRef,     chatWidth,     setChatWidth,     220, 600);
-  const startSidebarDrag = makeDragH(sidebarDragRef,  sidebarWidth,  setSidebarWidth,  120, 480, true);
+  function startPreviewDrag(e: React.MouseEvent) {
+    e.preventDefault();
+    const containerW = editorRowRef.current?.clientWidth ?? 700;
+    previewDragRef.current = { startX: e.clientX, startRatio: previewRatio, containerW };
+    const onMove = (ev: MouseEvent) => {
+      if (!previewDragRef.current) return;
+      const { startX, startRatio, containerW: cw } = previewDragRef.current;
+      const delta = startX - ev.clientX; // arrastar esquerda → preview maior
+      const newPreviewW = cw * startRatio - delta;
+      // Editor mín 300px, Preview mín 280px
+      const clamped = Math.max(280, Math.min(cw - 300, newPreviewW));
+      setPreviewRatio(clamped / cw);
+    };
+    const onUp = () => {
+      previewDragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  const startChatDrag    = makeDragH(chatDragRef,    chatWidth,    setChatWidth,    220, 600);
+  const startSidebarDrag = makeDragH(sidebarDragRef, sidebarWidth, setSidebarWidth, 120, 480, true);
 
   const TERMINAL_HEIGHT = terminal.isExpanded ? terminalHeight : 34;
   const SIDEBAR_WIDTH   = panels.showFileTree ? sidebarWidth : 0;
-  const PREVIEW_WIDTH   = panels.showPreview  ? previewWidth : 0;
   const CHAT_WIDTH      = chatWidth;
 
   const fileName = fileManager.openFile
@@ -180,6 +205,14 @@ export default function IDE() {
         @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
+
+      {/* Broadcast — notificações in-app do backend */}
+      <BroadcastBanner />
+
+      {/* Health indicator — canto inferior esquerdo */}
+      <div style={{ position: 'fixed', bottom: 6, left: 8, zIndex: 999 }}>
+        <HealthIndicator />
+      </div>
 
       {/* Toast de erro de arquivo */}
       {fileManager.fileError && (
@@ -248,8 +281,8 @@ export default function IDE() {
             />
           )}
           {/* Editor + Preview side by side, both above Terminal */}
-          <div style={styles.editorRow}>
-          <div style={styles.editorPane}>
+          <div ref={editorRowRef} style={styles.editorRow}>
+          <div style={{ ...styles.editorPane, flex: panels.showPreview && !fileManager.openFile ? 0 : panels.showPreview ? 1 - previewRatio : 1, minWidth: panels.showPreview && !fileManager.openFile ? 0 : 300, overflow: 'hidden' }}>
             {fileManager.openFile ? (
               <ErrorBoundary name="Editor">
                 <Editor
@@ -313,7 +346,7 @@ export default function IDE() {
           </div>
 
             {panels.showPreview && (
-              <div style={{ display: 'flex', flexDirection: 'row', width: PREVIEW_WIDTH, flexShrink: 0, borderLeft: '1px solid rgba(255,255,255,0.55)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', flex: fileManager.openFile ? previewRatio : 1, minWidth: 280, borderLeft: fileManager.openFile ? '1px solid rgba(255,255,255,0.55)' : 'none', overflow: 'hidden' }}>
                 <div
                   data-resize
                   style={styles.resizeHandle}

@@ -143,8 +143,8 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 2,
   },
   asstContent: {
-    color: D.textMid,
-    fontSize: 12.5, lineHeight: 1.65,
+    color: D.text,
+    fontSize: 13, lineHeight: 1.65,
     wordBreak: 'break-word', whiteSpace: 'pre-wrap',
     flex: 1,
     fontFamily: '-apple-system, "SF Pro Text", sans-serif',

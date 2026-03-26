@@ -396,9 +396,23 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
             <button
               key={p.id}
               onClick={() => {
-                setSelectedProvider(p.id as AIProvider);
-                if (p.id !== 'claude') setSelectedExtModel(PROVIDER_MODELS[p.id as Exclude<AIProvider, 'claude'>][0].id);
-                chat.clearSession();
+                const pid = p.id as AIProvider;
+                const alreadyActive = selectedProvider === pid;
+                setSelectedProvider(pid);
+                if (pid !== 'claude') setSelectedExtModel(PROVIDER_MODELS[pid as Exclude<AIProvider, 'claude'>][0].id);
+                if (!alreadyActive) chat.clearSession();
+                if (pid !== 'claude') {
+                  const noKey = !savedKeys[pid];
+                  if (noKey || alreadyActive) {
+                    // Sem key → abre automaticamente; já ativo → abre para editar
+                    setShowKeyInput(true);
+                    window.api.aiProvider?.getKey(pid).then((r: { ok: boolean; key: string | null }) => setKeyInputValue(r?.key ?? ''));
+                  } else {
+                    setShowKeyInput(false);
+                  }
+                } else {
+                  setShowKeyInput(false);
+                }
               }}
               style={{
                 ...styles.provCard,
@@ -472,8 +486,9 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         {selectedProvider !== 'claude' && (
           <button
             onClick={() => {
-              setShowKeyInput(v => !v);
-              if (!showKeyInput) (window.api as any).aiProvider?.getKey(selectedProvider).then((r: { key: string }) => setKeyInputValue(r?.key ?? ''));
+              const next = !showKeyInput;
+              setShowKeyInput(next);
+              if (next) window.api.aiProvider?.getKey(selectedProvider).then((r: { ok: boolean; key: string | null }) => setKeyInputValue(r?.key ?? ''));
             }}
             style={{ ...styles.iconBtn, color: savedKeys[selectedProvider] ? D.accent : D.textDim }}
             title="Configurar API key"
@@ -484,7 +499,9 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
       {/* ── API key input (collapsible) ───────────────────────────── */}
       {showKeyInput && selectedProvider !== 'claude' && (
         <div style={styles.keyBar}>
-          <span style={styles.keyLabel}>API key · {selectedProvider}</span>
+          <span style={styles.keyLabel}>
+            {selectedProvider === 'groq' ? '🎙 Groq key (transcrição de voz)' : `API key · ${selectedProvider}`}
+          </span>
           <input
             type="password"
             value={keyInputValue}
@@ -493,7 +510,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
             style={styles.keyInput}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                (window.api as any).aiProvider?.saveKey(selectedProvider, keyInputValue).then(() => {
+                window.api.aiProvider?.saveKey(selectedProvider, keyInputValue).then(() => {
                   setSavedKeys(prev => ({ ...prev, [selectedProvider]: !!keyInputValue }));
                   setShowKeyInput(false);
                 });
@@ -502,7 +519,7 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
             }}
           />
           <button
-            onClick={() => (window.api as any).aiProvider?.saveKey(selectedProvider, keyInputValue).then(() => { setSavedKeys(prev => ({ ...prev, [selectedProvider]: !!keyInputValue })); setShowKeyInput(false); })}
+            onClick={() => window.api.aiProvider?.saveKey(selectedProvider, keyInputValue).then(() => { setSavedKeys(prev => ({ ...prev, [selectedProvider]: !!keyInputValue })); setShowKeyInput(false); })}
             style={styles.saveKeyBtn}
           >salvar</button>
         </div>
@@ -593,8 +610,16 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         </div>
       )}
 
+      {/* ── Transcrevendo (status neutro) ────────────────────────── */}
+      {voice.voiceError === 'Transcrevendo...' && (
+        <div style={styles.voiceStatus}>
+          <span style={{ animation: 'pulse 1s infinite' }}>◉</span>
+          <span>Transcrevendo áudio…</span>
+        </div>
+      )}
+
       {/* ── Voice error ───────────────────────────────────────────── */}
-      {voice.voiceError && (
+      {voice.voiceError && voice.voiceError !== 'Transcrevendo...' && (
         <div style={styles.voiceError}>
           <span>⚠</span>
           <span style={{ flex: 1 }}>{voice.voiceError}</span>
@@ -620,10 +645,9 @@ export default function IntelliChat({ mode = 'project', projectPath, activeFile,
         hasActiveFile={Boolean(activeFile)}
       />
 
-      {/* Modal de permissão de microfone */}
+      {/* Modal de permissão de microfone — só aparece quando bloqueado permanentemente */}
       {voice.needsPermission && (
         <MicPermissionModal
-          onGranted={voice.onPermissionGranted}
           onDeny={voice.dismissPermission}
         />
       )}
@@ -775,7 +799,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // ── Messages
-  messagesWrapper: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  messagesWrapper: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 },
 
   // ── Tool bar
   toolBar: {
@@ -791,7 +815,7 @@ const styles: Record<string, React.CSSProperties> = {
     animation: 'pulse 1s infinite',
   } as React.CSSProperties,
   toolName: { fontSize: 9.5, color: D.accent, fontFamily: 'monospace', flexShrink: 0 },
-  toolPath: { fontSize: 9.5, color: D.textDim, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
+  toolPath: { fontSize: 9.5, color: D.textDim, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, maxWidth: 220, flex: 1 },
 
   // ── Suggestions
   suggestionsBar: {
@@ -840,7 +864,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none', border: 'none', color: D.error,
     cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0,
   },
-
+  voiceStatus: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    margin: '0 10px 4px',
+    padding: '5px 10px',
+    background: 'rgba(63,185,80,0.06)', border: `1px solid rgba(63,185,80,0.15)`,
+    borderRadius: 6, fontSize: 10.5, color: D.accent,
+  },
   // ── Empty state
   quickSends: { display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 12px 12px', flexShrink: 0 },
   quickSendBtn: {

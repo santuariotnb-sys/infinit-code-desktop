@@ -138,6 +138,32 @@ contextBridge.exposeInMainWorld('api', {
     validate: (key: string, email: string) => ipcRenderer.invoke('license:validate', key, email),
     getStored: () => ipcRenderer.invoke('license:get-stored'),
     clear: () => ipcRenderer.invoke('license:clear'),
+    getDeviceId: () => ipcRenderer.invoke('device:get-id'),
+    onRevoked: (cb: (data: { reason: string; message: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, d: { reason: string; message: string }) => cb(d);
+      ipcRenderer.on('license:revoked', handler);
+      return () => ipcRenderer.removeListener('license:revoked', handler);
+    },
+  },
+
+  health: {
+    get: () => ipcRenderer.invoke('health:get'),
+    setPreviewPort: (port: number | null) => ipcRenderer.invoke('health:set-preview-port', port),
+    onUpdated: (cb: (data: import('../main/services/health').HealthStatus) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, d: import('../main/services/health').HealthStatus) => cb(d);
+      ipcRenderer.on('health:updated', handler);
+      return () => ipcRenderer.removeListener('health:updated', handler);
+    },
+  },
+
+  broadcast: {
+    get: () => ipcRenderer.invoke('broadcast:get'),
+    dismiss: (id: string) => ipcRenderer.invoke('broadcast:dismiss', id),
+    onUpdated: (cb: (data: import('../main/services/broadcast').BroadcastMessage[]) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, d: import('../main/services/broadcast').BroadcastMessage[]) => cb(d);
+      ipcRenderer.on('broadcast:updated', handler);
+      return () => ipcRenderer.removeListener('broadcast:updated', handler);
+    },
   },
 
   updater: {
