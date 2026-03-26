@@ -15,37 +15,63 @@ const HMR_REGEXES = [/HMR/, /Fast Refresh/, /hot update/i];
 const FULL_RELOAD_REGEXES = [/\breloaded\b/i, /\bfull[- ]reload\b/i];
 const ERROR_REGEXES = [/EADDRINUSE/, /Cannot find module/i, /SyntaxError:/i];
 
-// Arquivos candidatos a conter rotas
-const ROUTER_CANDIDATES = [
-  'src/App.tsx', 'src/App.jsx', 'src/app.tsx', 'src/app.jsx',
-  'src/router.tsx', 'src/router.jsx', 'src/routes.tsx', 'src/routes.jsx',
-  'src/router/index.tsx', 'src/router/index.jsx',
-  'app/routes.ts', 'app/routes.tsx',
-];
-
+// Extrai todas as rotas de um arquivo
 function extractRoutes(content: string): string[] {
   const paths = new Set<string>();
-
-  // path="..." ou path={'...'} (JSX)
-  for (const m of content.matchAll(/path=["'`]([^"'`]+)["'`]/g)) {
-    const p = m[1].trim();
-    if (p && p.startsWith('/')) paths.add(p);
+  const ROUTE_PATTERNS = [
+    /path=["'`{]\s*["'`]([^"'`]+)["'`]/g,           // path="/foo"
+    /path:\s*["'`]([^"'`]+)["'`]/g,                   // path: "/foo"
+    /to=["'`{]\s*["'`]([^"'`]+)["'`]/g,              // to="/foo"
+    /href=["'`]([^"'`]+)["'`]/g,                       // href="/foo"
+    /(?:navigate|push|replace)\(\s*["'`]([^"'`]+)["'`]/g, // navigate("/foo")
+    /element:\s*["'`]([^"'`]+)["'`]/g,                // element: "/foo" (raro)
+  ];
+  for (const re of ROUTE_PATTERNS) {
+    for (const m of content.matchAll(re)) {
+      const p = m[1].trim();
+      if (p && p.startsWith('/') && !p.startsWith('//') && !p.startsWith('/cdn') && !p.includes('.') && p.length < 80) {
+        paths.add(p);
+      }
+    }
   }
+  return Array.from(paths);
+}
 
-  // { path: "..." } (createBrowserRouter / createHashRouter)
-  for (const m of content.matchAll(/path:\s*["'`]([^"'`]+)["'`]/g)) {
-    const p = m[1].trim();
-    if (p && p.startsWith('/')) paths.add(p);
-  }
+// Escaneia diretório recursivamente e retorna todos os .tsx/.jsx
+async function scanFiles(dir: string, depth = 0): Promise<string[]> {
+  if (depth > 4) return [];
+  try {
+    const result = await window.api.files.readDir(dir);
+    if (!result?.ok || !result.data) return [];
+    const paths: string[] = [];
+    const subDirs: Promise<string[]>[] = [];
+    for (const f of result.data) {
+      if (f.type === 'folder' && !f.name.startsWith('.') && f.name !== 'node_modules' && f.name !== 'dist' && f.name !== 'build' && f.name !== '.next') {
+        subDirs.push(scanFiles(f.path, depth + 1));
+      } else if (f.type === 'file' && /\.(tsx|jsx|ts|js)$/.test(f.name) && !/\.(test|spec|stories)\./i.test(f.name)) {
+        paths.push(f.path);
+      }
+    }
+    const nested = await Promise.allSettled(subDirs);
+    for (const r of nested) {
+      if (r.status === 'fulfilled') paths.push(...r.value);
+    }
+    return paths;
+  } catch { return []; }
+}
 
-  // Ordena: "/" primeiro, depois alfabético
-  const sorted = Array.from(paths).sort((a, b) => {
-    if (a === '/') return -1;
-    if (b === '/') return 1;
-    return a.localeCompare(b);
-  });
-
-  return sorted;
+// Converte nome de arquivo de página em rota (file-based routing)
+function fileToRoute(filePath: string, pagesDir: string): string | null {
+  let rel = filePath.replace(pagesDir, '').replace(/\\/g, '/');
+  // Remove extensão
+  rel = rel.replace(/\.(tsx|jsx|ts|js)$/, '');
+  // Remove /index
+  rel = rel.replace(/\/index$/, '') || '/';
+  // Remove _app, _document, _error (Next.js internals)
+  if (/\/_/.test(rel)) return null;
+  // Converte [param] → :param
+  rel = rel.replace(/\[([^\]]+)\]/g, ':$1');
+  return rel.startsWith('/') ? rel : `/${rel}`;
 }
 
 // SVG icons
@@ -147,6 +173,21 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   const probeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const detectedPortRef = useRef<number | null>(null);
 
+  // Usa serverPort da ghost terminal imediatamente quando disponível
+  // Roda com pequeno delay para garantir que o reset de projeto já executou
+  useEffect(() => {
+    if (!serverPort) return;
+    const t = setTimeout(() => {
+      detectedPortRef.current = serverPort;
+      if (probeTimer.current) clearTimeout(probeTimer.current);
+      setPort(serverPort);
+      setStatus('loading');
+      setServerError(false);
+      setIframeRetries(0);
+    }, 50);
+    return () => clearTimeout(t);
+  }, [serverPort]);
+
   // Ref estável para onPathChange — evita loop infinito com função inline
   const onPathChangeRef = useRef(onPathChange);
   useEffect(() => { onPathChangeRef.current = onPathChange; });
@@ -167,16 +208,52 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
   // ── Detecta rotas do arquivo de roteamento do projeto ──
   const detectRoutes = useCallback(async () => {
     if (!projectPath) return;
-    for (const rel of ROUTER_CANDIDATES) {
-      const result = await window.api.files.read(`${projectPath}/${rel}`);
-      if (!result?.ok || !result.data) continue;
-      const found = extractRoutes(result.data);
-      if (found.length > 0) {
-        setRoutes(found);
-        return;
+    const allRoutes = new Set<string>();
+
+    // 1. Scan todos os arquivos .tsx/.jsx em src/ e app/
+    const allFiles = [
+      ...(await scanFiles(`${projectPath}/src`)),
+      ...(await scanFiles(`${projectPath}/app`)),
+    ];
+
+    // 2. Lê todos em paralelo (max 50 arquivos) e extrai rotas
+    const filesToRead = allFiles.slice(0, 50);
+    const reads = await Promise.allSettled(
+      filesToRead.map(f => window.api.files.read(f))
+    );
+    for (const r of reads) {
+      if (r.status !== 'fulfilled' || !r.value?.ok || !r.value.data) continue;
+      for (const route of extractRoutes(r.value.data)) {
+        allRoutes.add(route);
       }
     }
-    setRoutes([]);
+
+    // 3. File-based routing: src/pages/ → rotas
+    const pagesDir = `${projectPath}/src/pages`;
+    const pageFiles = await scanFiles(pagesDir, 0);
+    for (const f of pageFiles) {
+      const route = fileToRoute(f, pagesDir);
+      if (route) allRoutes.add(route);
+    }
+
+    // 4. Next.js pages/
+    const nextPagesDir = `${projectPath}/pages`;
+    const nextPageFiles = await scanFiles(nextPagesDir, 0);
+    for (const f of nextPageFiles) {
+      const route = fileToRoute(f, nextPagesDir);
+      if (route) allRoutes.add(route);
+    }
+
+    // Remove rotas com : (parâmetros dinâmicos) e wildcards
+    const clean = Array.from(allRoutes)
+      .filter(r => !r.includes(':') && !r.includes('*'))
+      .sort((a, b) => {
+        if (a === '/') return -1;
+        if (b === '/') return 1;
+        return a.localeCompare(b);
+      });
+
+    setRoutes(clean);
   }, [projectPath]);
 
   // Atualiza rotas quando projeto muda ou arquivo de roteamento muda
@@ -184,12 +261,11 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     detectRoutes();
   }, [detectRoutes]);
 
-  // Escuta mudanças de arquivo — re-detecta rotas se for o arquivo de router
+  // Escuta mudanças de arquivo — re-detecta rotas se for arquivo de rota
   useEffect(() => {
     if (!projectPath) return;
     const cleanup = window.api.files.onChanged((changedPath: string) => {
-      const rel = changedPath.replace(projectPath + '/', '');
-      if (ROUTER_CANDIDATES.includes(rel)) {
+      if (/\.(tsx|jsx|ts|js)$/.test(changedPath) && /(?:App|route|page|layout)/i.test(changedPath)) {
         detectRoutes();
       }
     });
@@ -238,7 +314,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
       pkgManager === 'bun' ? 'bun install' :
       pkgManager === 'pnpm' ? 'pnpm install' :
       pkgManager === 'yarn' ? 'yarn' : 'npm install';
-    setTimeout(() => window.api.terminal.write(cmd + '\r'), 800);
+    setTimeout(() => window.api.terminal.write(cmd + '\r'), 200);
   }, [projectPath, hasNodeModules, pkgManager]);
 
   // Auto-start dev server quando node_modules está disponível
@@ -247,7 +323,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     if (autoStartedForRef.current === projectPath) return;
     if (serverPort) return; // servidor já está rodando — não reinicia
     autoStartedForRef.current = projectPath;
-    setTimeout(() => onRunDevRef.current?.(), 600);
+    setTimeout(() => onRunDevRef.current?.(), 150);
   }, [projectPath, hasNodeModules, serverPort]); // onRunDev removido — usa ref estável
 
   // Refresh externo (ex: pós-git-sync/pull) — aguarda Vite compilar antes de recarregar
@@ -280,7 +356,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     };
   }, []);
 
-  // Auto-probe portas comuns se nenhuma detectada em 8s
+  // Auto-probe portas comuns se nenhuma detectada em 2s
   function scheduleProbe() {
     if (probeTimer.current) clearTimeout(probeTimer.current);
     probeTimer.current = setTimeout(async () => {
@@ -289,7 +365,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
       for (const p of candidates) {
         try {
           const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 600);
+          const t = setTimeout(() => ctrl.abort(), 400);
           const res = await fetch(`http://localhost:${p}`, { signal: ctrl.signal, mode: 'no-cors' });
           clearTimeout(t);
           if (res.type === 'opaque' || res.ok) {
@@ -301,7 +377,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
           }
         } catch { /* porta não responde */ }
       }
-    }, 8000);
+    }, 2000);
   }
 
   // Detecção de porta via terminal output
@@ -378,7 +454,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
         setServerError(true);
         return next;
       }
-      const delay = Math.min(1000 * next, 4000);
+      const delay = Math.min(500 * next, 2000);
       if (retryTimer.current) clearTimeout(retryTimer.current);
       retryTimer.current = setTimeout(() => setIframeKey(k => k + 1), delay);
       return next;
@@ -568,34 +644,101 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
             )}
           </div>
 
-          {/* Botão de rotas — só aparece se detectou rotas */}
-          {routes.length > 0 && (
+          {/* Botão de rotas — sempre visível quando tem porta */}
+          {port && (
             <button
-              style={{ ...s.routesBtn, background: showRoutesPicker ? 'rgba(255,255,255,0.06)' : 'transparent' }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                border: '1px solid',
+                borderColor: showRoutesPicker ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.08)',
+                background: showRoutesPicker ? 'rgba(34,197,94,0.1)' : 'rgba(255,255,255,0.04)',
+                color: showRoutesPicker ? '#22c55e' : '#999',
+                cursor: 'pointer',
+                padding: '3px 8px 3px 6px',
+                borderRadius: 5,
+                flexShrink: 0,
+                fontSize: 10,
+                fontFamily: 'monospace',
+                transition: 'all 0.15s',
+              }}
               onClick={() => { setShowRoutesPicker(v => !v); setEditingPath(false); }}
-              title="Páginas detectadas"
+              onMouseEnter={(e) => { if (!showRoutesPicker) { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = '#ccc'; } }}
+              onMouseLeave={(e) => { if (!showRoutesPicker) { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#999'; } }}
+              title={routes.length > 0 ? `${routes.length} páginas detectadas` : 'Navegar para URL'}
             >
               <IconChevron />
+              Rotas
             </button>
           )}
 
           {/* Dropdown de rotas */}
-          {showRoutesPicker && routes.length > 0 && (
-            <div style={s.routesDropdown}>
+          {showRoutesPicker && (
+            <div style={{
+              position: 'absolute',
+              top: 'calc(100% + 4px)',
+              left: 0,
+              right: 0,
+              background: '#fff',
+              borderRadius: 10,
+              overflow: 'hidden',
+              zIndex: 100,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.25), 0 1px 4px rgba(0,0,0,0.1)',
+              maxHeight: 320,
+              overflowY: 'auto',
+            }}>
+              {/* Rota atual no topo */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 12px', borderBottom: '1px solid #eee',
+                background: '#f8f8f8', fontSize: 12, fontFamily: 'monospace', color: '#333',
+              }}>
+                <span style={{ color: '#999', fontSize: 11 }}>→</span>
+                <input
+                  autoFocus
+                  defaultValue={currentPath}
+                  placeholder="/rota"
+                  style={{
+                    flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                    fontSize: 12, fontFamily: 'monospace', color: '#333',
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      const val = (e.target as HTMLInputElement).value.trim();
+                      if (val) navigateTo(val.startsWith('/') ? val : `/${val}`);
+                    }
+                    if (e.key === 'Escape') setShowRoutesPicker(false);
+                  }}
+                  onFocus={e => e.target.select()}
+                />
+              </div>
+              {/* Lista de rotas */}
               {routes.map(route => (
                 <button
                   key={route}
                   style={{
-                    ...s.routeItem,
-                    background: currentPath === route ? 'rgba(34,197,94,0.08)' : 'transparent',
-                    color: currentPath === route ? '#22c55e' : '#ccc',
+                    display: 'flex', alignItems: 'center', width: '100%',
+                    padding: '8px 12px', border: 'none', cursor: 'pointer',
+                    fontSize: 13, fontFamily: 'monospace', textAlign: 'left',
+                    background: currentPath === route ? '#e8f5e9' : '#fff',
+                    color: currentPath === route ? '#2e7d32' : '#333',
+                    transition: 'background 0.1s',
                   }}
+                  onMouseEnter={e => { if (currentPath !== route) e.currentTarget.style.background = '#f5f5f5'; }}
+                  onMouseLeave={e => { if (currentPath !== route) e.currentTarget.style.background = '#fff'; }}
                   onClick={() => navigateTo(route)}
                 >
-                  <span style={s.routeItemText}>{route}</span>
-                  {currentPath === route && <span style={s.routeCheck}>✓</span>}
+                  <span style={{ flex: 1 }}>{route}</span>
+                  {currentPath === route && <span style={{ color: '#4caf50', fontSize: 11 }}>✓</span>}
                 </button>
               ))}
+              {routes.length === 0 && (
+                <div style={{ padding: '14px 12px', fontSize: 12, color: '#999', textAlign: 'center', fontFamily: '-apple-system, sans-serif' }}>
+                  Nenhuma página detectada.<br/>
+                  <span style={{ fontSize: 11, color: '#bbb' }}>Digite uma rota acima e pressione Enter.</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -618,7 +761,7 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
             ⋯
           </button>
           {showMoreMenu && (
-            <div style={s.ctxMenuBox} onContextMenu={e => e.preventDefault()}>
+            <div style={{ ...s.ctxMenuBox, position: 'absolute', top: 'calc(100% + 4px)', right: 0, maxHeight: 360, overflowY: 'auto' }} onContextMenu={e => e.preventDefault()}>
               {renderCtxItems(() => setShowMoreMenu(false))}
             </div>
           )}

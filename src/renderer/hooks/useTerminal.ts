@@ -28,12 +28,14 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
     const cleanup = window.api.terminal.onData((data: string) => {
       outputRef.current = (outputRef.current + data).split('\n').slice(-300).join('\n');
       // Throttle: atualiza React state no máximo a cada 50ms
+      // Flush imediato nas primeiras linhas para não atrasar exibição inicial
       if (!dirty) {
         dirty = true;
+        const delay = outputRef.current.length < 500 ? 0 : 50;
         flushTimer = setTimeout(() => {
           setTerminalOutput(outputRef.current);
           dirty = false;
-        }, 50);
+        }, delay);
       }
     });
 
@@ -57,10 +59,12 @@ export function useTerminal({ onPortDetected }: UseTerminalOptions = {}) {
       ghostRef.current = (ghostRef.current + data).split('\n').slice(-300).join('\n');
       if (!ghostDirty) {
         ghostDirty = true;
+        // Flush imediato se é a primeira vez, depois throttle 50ms
+        const delay = ghostRef.current.length < 500 ? 0 : 50;
         ghostFlushTimer = setTimeout(() => {
           setGhostOutput(ghostRef.current);
           ghostDirty = false;
-        }, 50);
+        }, delay);
       }
 
       // Port detection no ghost output
