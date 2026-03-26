@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('file:changed', handler);
       return () => ipcRenderer.removeListener('file:changed', handler);
     },
+    scanRoutes: (projectPath: string) => ipcRenderer.invoke('file:scan-routes', projectPath),
   },
 
   claude: {

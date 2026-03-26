@@ -9,6 +9,12 @@ type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 /** Resultado simples sem payload */
 type OkResult = { ok: true } | { ok: false; error: string };
 
+interface RouteEntry {
+  route: string;
+  filePath: string;
+  type: 'page' | 'layout' | 'api';
+}
+
 interface FileNode {
   name: string;
   path: string;
@@ -45,6 +51,7 @@ interface ElectronAPI {
     exists: (filePath: string) => Promise<{ ok: boolean; exists: boolean }>;
     mkdir: (dirPath: string) => Promise<{ ok: boolean; error?: string }>;
     onChanged: (cb: (filePath: string) => void) => () => void;
+    scanRoutes: (projectPath: string) => Promise<{ ok: boolean; routes: RouteEntry[]; error?: string }>;
   };
   claude: {
     checkInstalled: () => Promise<{ installed: boolean; version?: string }>;

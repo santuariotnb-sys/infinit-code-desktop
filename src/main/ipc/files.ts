@@ -118,6 +118,91 @@ function isPathSafe(filePath: string, allowedRoot?: string): boolean {
   return true;
 }
 
+// ── Route scanner (Next.js App Router + Pages Router) ──────────────
+
+interface RouteEntry {
+  route: string;
+  filePath: string;
+  type: 'page' | 'layout' | 'api';
+}
+
+const PAGE_FILES = new Set(['page.tsx', 'page.jsx', 'page.js', 'page.ts']);
+const LAYOUT_FILES = new Set(['layout.tsx', 'layout.jsx', 'layout.js', 'layout.ts']);
+const ROUTE_FILES = new Set(['route.tsx', 'route.jsx', 'route.js', 'route.ts']);
+
+function scanAppRouter(appDir: string, prefix = ''): RouteEntry[] {
+  const routes: RouteEntry[] = [];
+  try {
+    const entries = fs.readdirSync(appDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(appDir, entry.name);
+      if (entry.isFile()) {
+        if (PAGE_FILES.has(entry.name)) {
+          routes.push({ route: prefix || '/', filePath: fullPath, type: 'page' });
+        } else if (LAYOUT_FILES.has(entry.name) && prefix) {
+          routes.push({ route: prefix, filePath: fullPath, type: 'layout' });
+        } else if (ROUTE_FILES.has(entry.name)) {
+          routes.push({ route: prefix || '/', filePath: fullPath, type: 'api' });
+        }
+      } else if (entry.isDirectory() && !entry.name.startsWith('_') && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+        if (entry.name.startsWith('(') && entry.name.endsWith(')')) {
+          routes.push(...scanAppRouter(fullPath, prefix));
+        } else {
+          routes.push(...scanAppRouter(fullPath, `${prefix}/${entry.name}`));
+        }
+      }
+    }
+  } catch { /* dir may not exist */ }
+  return routes;
+}
+
+function scanPagesRouter(pagesDir: string, prefix = ''): RouteEntry[] {
+  const routes: RouteEntry[] = [];
+  try {
+    const entries = fs.readdirSync(pagesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(pagesDir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith('_') || entry.name.startsWith('.') || entry.name === 'node_modules') {
+          if (entry.name === 'api') {
+            routes.push(...scanPagesRouter(fullPath, `${prefix}/api`).map(r => ({ ...r, type: 'api' as const })));
+          }
+          continue;
+        }
+        routes.push(...scanPagesRouter(fullPath, `${prefix}/${entry.name}`));
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name);
+        if (!['.tsx', '.jsx', '.js', '.ts'].includes(ext)) continue;
+        const base = path.basename(entry.name, ext);
+        if (base.startsWith('_')) continue;
+        const route = base === 'index' ? (prefix || '/') : `${prefix}/${base}`;
+        routes.push({ route, filePath: fullPath, type: 'page' });
+      }
+    }
+  } catch { /* dir may not exist */ }
+  return routes;
+}
+
+function scanProjectRoutes(projectPath: string): RouteEntry[] {
+  const routes: RouteEntry[] = [];
+  for (const candidate of ['app', 'src/app']) {
+    const appDir = path.join(projectPath, candidate);
+    if (fs.existsSync(appDir)) routes.push(...scanAppRouter(appDir));
+  }
+  for (const candidate of ['pages', 'src/pages']) {
+    const pagesDir = path.join(projectPath, candidate);
+    if (fs.existsSync(pagesDir)) routes.push(...scanPagesRouter(pagesDir));
+  }
+  const seen = new Map<string, RouteEntry>();
+  for (const r of routes) {
+    const existing = seen.get(r.route);
+    if (!existing || (r.type === 'page' && existing.type !== 'page')) {
+      seen.set(r.route, r);
+    }
+  }
+  return Array.from(seen.values()).sort((a, b) => a.route.localeCompare(b.route));
+}
+
 export function registerFileHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('file:read', async (_event, filePath: string) => {
     try {
@@ -228,6 +313,18 @@ export function registerFileHandlers(mainWindow: BrowserWindow): void {
       });
     } catch {
       // directory may not exist yet
+    }
+  });
+
+  ipcMain.handle('file:scan-routes', async (_event, projectPath: string) => {
+    try {
+      if (!isPathSafe(projectPath)) {
+        return { ok: false, error: 'Acesso negado', routes: [] };
+      }
+      const routes = scanProjectRoutes(projectPath);
+      return { ok: true, routes };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message, routes: [] };
     }
   });
 }

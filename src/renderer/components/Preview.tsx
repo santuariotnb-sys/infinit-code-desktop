@@ -210,13 +210,11 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
     if (!projectPath) return;
     const allRoutes = new Set<string>();
 
-    // 1. Scan todos os arquivos .tsx/.jsx em src/ e app/
+    // 1. Deep scan: lê todos .tsx/.jsx em src/ e app/
     const allFiles = [
       ...(await scanFiles(`${projectPath}/src`)),
       ...(await scanFiles(`${projectPath}/app`)),
     ];
-
-    // 2. Lê todos em paralelo (max 50 arquivos) e extrai rotas
     const filesToRead = allFiles.slice(0, 50);
     const reads = await Promise.allSettled(
       filesToRead.map(f => window.api.files.read(f))
@@ -228,23 +226,25 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
       }
     }
 
-    // 3. File-based routing: src/pages/ → rotas
-    const pagesDir = `${projectPath}/src/pages`;
-    const pageFiles = await scanFiles(pagesDir, 0);
-    for (const f of pageFiles) {
-      const route = fileToRoute(f, pagesDir);
-      if (route) allRoutes.add(route);
+    // 2. File-based routing: src/pages/ e pages/
+    for (const dir of [`${projectPath}/src/pages`, `${projectPath}/pages`]) {
+      for (const f of await scanFiles(dir, 0)) {
+        const route = fileToRoute(f, dir);
+        if (route) allRoutes.add(route);
+      }
     }
 
-    // 4. Next.js pages/
-    const nextPagesDir = `${projectPath}/pages`;
-    const nextPageFiles = await scanFiles(nextPagesDir, 0);
-    for (const f of nextPageFiles) {
-      const route = fileToRoute(f, nextPagesDir);
-      if (route) allRoutes.add(route);
+    // 3. Fallback: scanRoutes do main process (se disponível)
+    if (allRoutes.size === 0) {
+      try {
+        const res = await window.api.files.scanRoutes(projectPath);
+        if (res.ok && res.routes.length > 0) {
+          for (const r of res.routes) allRoutes.add(r.route);
+        }
+      } catch { /* scanRoutes não disponível */ }
     }
 
-    // Remove rotas com : (parâmetros dinâmicos) e wildcards
+    // Remove rotas com parâmetros dinâmicos e wildcards
     const clean = Array.from(allRoutes)
       .filter(r => !r.includes(':') && !r.includes('*'))
       .sort((a, b) => {
@@ -252,7 +252,6 @@ export default function Preview({ terminalOutput = '', onRunDev, projectPath, ha
         if (b === '/') return 1;
         return a.localeCompare(b);
       });
-
     setRoutes(clean);
   }, [projectPath]);
 
